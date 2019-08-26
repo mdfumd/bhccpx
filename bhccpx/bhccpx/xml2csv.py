@@ -32,6 +32,7 @@ import progressbar as pb
 # The config object defines key user-controlled variables
 # If running from the command line, these choices may be overridden below
 import bhc_util as UTIL
+import bhc_data as DATA
 
 LOG = UTIL.log_config(__file__.split(os.path.sep)[-1].split('.')[0])
 
@@ -86,7 +87,9 @@ def write_elem(config, elem, outfile, template):
     
     
 def parse_nic_file(config, xmlfilename):
-    xmlfiledir = UTIL.resolve_dir_nic(config['xml2csv']['nic_dir'], 
+    UTIL.tic()
+    
+    xmlfiledir = DATA.resolve_dir_nic(config['xml2csv']['nic_dir'], 
       config['xml2csv']['nic_subdir'])
     xmlfilepath = os.path.join(xmlfiledir, xmlfilename)
     chunksize = int(config['xml2csv']['chunksize'])
@@ -176,6 +179,8 @@ def parse_nic_file(config, xmlfilename):
         bar.update(bar.max_value)
         pb.utils.streams.flush()
         bar.finish(end='', dirty=True)
+        
+    LOG.info(f'PROFILE {UTIL.toc()} secs: parse_nic_file {xmlfilename}')
 
 
 # This default invocation parses all five *.xml files, as

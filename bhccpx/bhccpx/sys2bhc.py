@@ -38,51 +38,6 @@ import csv2sys
 LOG = UTIL.log_config(__file__.split(os.path.sep)[-1].split('.')[0])
 
 
-def add_attributes(config, NICdata, BHC):
-    """# Decorates a BHC graph with certain important attibutes
-    
-    For each node in the BHC, looks up a number of important attributes 
-    from the attributes dataframe (in DATA), and attaches them to the node. 
-    
-    Parameters
-    ----------
-    config : ConfigParser object
-        The key parameter(s):
-          * config['sys2bhc']['extraattributes']
-    DATA : object
-        A list of key information resources, as assembled by makeDATA()
-    BHC : NetworkX DiGraph 
-        The bank holding company object to decorate
-        
-    Returns
-    -------
-    The decorated BHC graph is returned.
-
-    """
-    ATTdf = NICdata[DATA.IDX_Attributes]
-    for node in BHC.nodes():
-        node_id = np.int32(node)
-        try:
-            ent = ATTdf.loc[node_id]
-            node_dict = {
-            'nicsource': ent['NICsource'],
-            'entity_type': ent['ENTITY_TYPE'],
-            'GEO_JURISD': ent['CNTRY_NM'].strip() +' - '+ ent['STATE_ABBR_NM'],
-            }
-            # Now add the extra params requested in the config file
-            extras = eval(config['sys2bhc']['extraattributes'])
-            for x in extras:
-                node_dict[x.lower()] = ent[x]
-        except:
-            node_dict = {
-            'nicsource': 'XXX',
-            'entity_type': 'XXX',
-            'GEO_JURISD': 'XXX'
-            }
-        nx.set_node_attributes(BHC, {node: node_dict})
-    return BHC
-
-
 # Copies BHC to a new DiGraph object that is identical to BHC, except
 # that it lacks any branches or subsidiaries of branches
 def remove_branches(config, NICdata, BHC):

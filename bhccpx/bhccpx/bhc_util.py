@@ -23,7 +23,10 @@
 # Last revision: 22-Jun-2019
 # -----------------------------------------------------------------------------
 
-__all__ = ['parse_command_line', 
+__all__ = ['tic',
+           'toc',
+           'currtime',
+           'parse_command_line', 
            'read_config', 
            'print_config',
            'make_asof',
@@ -36,6 +39,7 @@ __version__ = '0.3'
 __author__ = 'Mark D. Flood'
 
 
+import time
 import getopt
 import sys
 import os
@@ -45,6 +49,46 @@ import re
 import configparser as cp
 
 LOG = logging.getLogger(__file__.split(os.path.sep)[-1].split('.')[0])
+
+
+
+lasttime = time.time()
+def currtime():
+    """Get the current system time
+    
+    Returns
+    -------
+    currtime : float
+        The new benchmark system time, from time.time()
+    """
+    currtime = time.time()
+    return currtime
+
+def tic():
+    """Reset the timer to a new benchmark time
+    
+    Returns
+    -------
+    lastime : float
+        The new benchmark system time, from time.time()
+    """
+    global lasttime
+    lasttime = time.time()
+    return lasttime
+
+def toc():
+    """Reset the benchmark time, and report time elapsed since last reset
+    
+    Returns
+    -------
+    delta : float
+        Time change since last call to tic() or toc(), in seconds
+    """
+    global lasttime
+    newtime = time.time()
+    delta = newtime - lasttime
+    lasttime = newtime
+    return delta
 
 
 
@@ -272,11 +316,15 @@ def make_asof(YYYYQQ):
     return (yyyymmdd, y, q, Q)
  
 
-# Parses the strings Q0 and Q1, each of the form YYYYQQ (e.g., "1986Q2") into
-# asofdate variables (of type int), each of the form YYYYMMDD (e.g., 19860630). 
-# Every quarter-end asofdate between Q0 and Q1 (inclusive) is added to 
-# the asofs list, which is returned. 
+
 def assemble_asofs(YQ0, YQ1):
+    """Converts quarter (YYYYQQ) start/end dates to a list of ints (YYYYMMDD)
+    
+    Parses the strings YQ0 and YQ1, each of the form YYYYQQ (e.g., "1986Q2")
+    into asofdate variables (of type int), each of the form YYYYMMDD 
+    (e.g., 19860630). Every quarter-end asofdate between YQ0 and YQ1 
+    (inclusive) is added to the asofs list, which is returned. 
+    """
     asofs = []
     (yyyymmdd0, Y0, q0, Q0) =  make_asof(YQ0)
     (yyyymmdd1, Y1, q1, Q1) = make_asof(YQ1)
@@ -304,7 +352,7 @@ def stringify_qtrend(asofdate):
     """Converts an as-of date to a YYYYQQ string for the next quarter end
     """
     yyyy = int(asofdate/10000)
-    mmdd = asofdate -yyyy*10000
+    mmdd = int(asofdate) -yyyy*10000
     if (930 < mmdd):
         Nqtr = str(yyyy)+'Q4'
     elif (630 < mmdd):
@@ -320,7 +368,7 @@ def next_qtrend(asofdate):
     """Constructs the next quarter-end date for a given as-of date
     """
     yyyy = int(asofdate/10000)
-    mmdd = asofdate -yyyy*10000
+    mmdd = int(asofdate) -yyyy*10000
     if (1231 == mmdd):
         MRqtr = asofdate
     elif (930 < mmdd):
@@ -338,7 +386,7 @@ def rcnt_qtrend(asofdate):
     """Constructs the most recent past quarter-end date for a given as-of date
     """
     yyyy = int(asofdate/10000)
-    mmdd = asofdate -yyyy*10000
+    mmdd = int(asofdate) -yyyy*10000
     if (1231 == mmdd):
         MRqtr = asofdate
     elif (930 <= mmdd):
@@ -356,7 +404,7 @@ def rcnt_midyear(asofdate):
     """Constructs the most recent prior mid-year date for a given as-of date
     """
     yyyy = int(asofdate/10000)
-    mmdd = asofdate -yyyy*10000
+    mmdd = int(asofdate) -yyyy*10000
     if (mmdd > 630):
         midyear = yyyy
     else:

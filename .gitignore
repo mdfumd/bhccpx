@@ -1,3 +1,13 @@
+# Project-specific files and directories to skip. 
+attic/
+data/
+out/
+
+# The remainder of this gitignore is a standard set for Python files 
+# https://github.com/github/gitignore/blob/master/Python.gitignore
+# ==================================================================
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

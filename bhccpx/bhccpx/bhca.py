@@ -515,14 +515,14 @@ def high_holder_impute(BHC):
     
     """
     HH = None
-    # The set of all nodes with indegree==0
-    IN0 = set()
+#    IN0 = set()
     # The indegree counts for every node in BHC
-    indegrees = dict()
-    for ent in BHC:
-        indegrees[ent] = BHC.in_degree(ent)
-        if (0==BHC.in_degree(ent)):
-            IN0.add(ent)
+    indegrees = dict(BHC.in_degree())
+    # IN0 is the set of all nodes with indegree==0
+    IN0 = set([ent for ent, deg in indegrees.items() if 0==deg])
+#    for ent,deg in indegrees.items():
+#        if (0==deg):
+#            IN0.add(ent)
     case = -1
     if (1==len(IN0)):
         # There is a unique node with zero indegree
@@ -542,6 +542,127 @@ def high_holder_impute(BHC):
         HH = all_sort[0][0]
         case = 2
     return (HH, case)
+
+
+
+#def max_unambiguous_component(BHC, rssd):
+#    """Extracts from BHC the rssd's maximal component with an unambiguous root
+#    
+#    Start by projecting BHC to an undirected graph, BHCu. Extract the largest 
+#    connected subgraph of BHCu that contains rssd. Call this (undirected)
+#    component BHCu_rssd, and let BHC_rssd denote the (directed) subgraph of
+#    BHC implied by the nodes of BHCu_rssd. 
+#    
+#    There are three possible configurations for BHC_rssd:
+#               
+#        * Case 0: BHC_rssd has a single "root" entity with indegree==0. 
+#          This is the typical case. 
+#        * Case 1: There are multiple entities with indegree==0 in BHC_rssd.
+#        * Case 2: There are no entities with indegree==0 in BHC_rssd. 
+#          This case is anomolous, as it implies that all
+#          nodes participate in a directed cycle. 
+#    
+#    Note that it is theoretically possible in case 0 that not all nodes 
+#    in the component are reachable from the unique root node. 
+#    For example, consider the graph with node A as the root, Z as a leaf 
+#    node, but involving a directed cycle among the numbered nodes:
+#      * A -> Z
+#      * 3 -> 1
+#      * 1 -> 2
+#      * 2 -> 3
+#      * 3 -> Z
+#    This method does not identify instances of such isolated cycles. This 
+#    means that it theoretically possible (but rare) for rssd not to be 
+#    reachable from the root of the component. 
+#    
+#    Parameters
+#    ----------
+#    BHC : networkx.DiGraph
+#        A directed graph representing a bank holding company or larger 
+#        banking system. BHC need not be a single (undirected) component.
+#        Nodes in the BHC graph should have integer identifiers (RSSDs).
+#    rssd : int
+#        Identifier of one particular node within the BHC graph
+#        
+#    Returns
+#    -------
+#    BHC_rssd : 
+#    case : int
+#        One of the three possible structural cases:
+#            * Case 0: Unique node of indegree zero
+#            * Case 1: Multiple nodes of indegree zero
+#            * Case 2: No nodes of indegree zero
+#            
+#    Examples
+#    --------
+#    Consider a graph of two holding companies (1,2,3,4) and (10,20,30), which
+#    together own a joint venture subgraph (400,500). The directed edges in 
+#    the graph consist of:
+#        
+#        * First BHC: (1,2), (2,3), (3,4)
+#        * Second BHC: (10,20), (20,30)
+#        * Joint venture: (400,500), (2,400), (20,400)
+#    
+#    Set up a connected DiGraph for this structure:
+#    
+#    >>> import networkx as nx
+#    >>> BHCg = nx.DiGraph()
+#    >>> BHCg.add_edges_from([(1,2), (2,3), (3,4)])
+#    >>> BHCg.add_edges_from([(10,20), (20,30)])
+#    >>> BHCg.add_edges_from([(400,500), (2,400), (20,400)])
+#    >>> sorted(BHCg.nodes)
+#    [1, 2, 3, 4, 10, 20, 30, 400, 500]
+#    >>> sorted(BHCg.edges)
+#    [(1, 2), (2, 3), (2, 400), (3, 4), (10, 20), (20, 30), (20, 400), (400, 500)]
+#    
+#    There are two nodes of indegree==0: 
+#
+#    >>> BHCg.in_degree(1)
+#    0
+#    >>> BHCg.in_degree(10)
+#    0
+#    
+#    More nodes are reachable from node 1 than from node 10:
+#    
+#    >>> sorted(reachable_nodes(BHCg, 1))
+#    [1, 2, 3, 4, 400, 500]
+#    >>> sorted(reachable_nodes(BHCg, 10))
+#    [10, 20, 30, 400, 500]
+#    
+#    Node 1 is imputed as the high holder, under case==1:
+#
+#    >>> high_holder_impute(BHCg)
+#    (1, 1)
+#    
+#    """
+#    HH = None
+#    # The set of all nodes with indegree==0
+#    IN0 = set()
+#    # The indegree counts for every node in BHC
+#    indegrees = dict()
+#    for ent in BHC:
+#        indegrees[ent] = BHC.in_degree(ent)
+#        if (0==BHC.in_degree(ent)):
+#            IN0.add(ent)
+#    case = -1
+#    if (1==len(IN0)):
+#        # There is a unique node with zero indegree
+#        HH = IN0.pop()
+#        case = 0
+#    elif (len(IN0) > 0):
+#        # No unique ancestor, choose node with indegree==0 and most descendants
+#        HHreach = dict()
+#        for ent in IN0:
+#            HHreach[ent] = len(reachable_nodes(BHC, ent))
+#        IN0_sort = sorted(HHreach.items(), reverse=True, key=lambda x:x[1])
+#        HH = IN0_sort[0][0]
+#        case = 1
+#    else:
+#        # No nodes with zero indegree!! Pick the node with smallest indegree
+#        all_sort = sorted(indegrees.items(), key=lambda x:x[1])
+#        HH = all_sort[0][0]
+#        case = 2
+#    return (HH, case)
 
 
 
@@ -609,6 +730,65 @@ def reachable_nodes(BHC, rssd):
             
         
     
+def containing_component(BankSys, rssd):
+    """Finds all nodes in BankSys in the same component as rssd
+    
+    Assembles the set of nodes in the BankSys graph that are
+    connected (via an undirected path) from the rssd node.
+    
+    Parameters
+    ----------
+    BankSys : networkx.DiGraph
+        A directed graph representing a banking system. 
+    rssd : int
+        The identifier of a node within the banking system. 
+        
+    Returns
+    -------
+    reachable : set
+        The set of nodes in BankSys reachable from rssd by an undirected path.
+            
+    Examples
+    --------
+    Consider a graph of two holding companies (1,2,3) and (10,20,30), which
+    together own a joint venture subgraph (400,500). The directed edges in 
+    the graph consist of:
+        
+        * First BHC: (1,2), (2,3)
+        * Second BHC: (10,20), (20,30)
+        * Joint venture: (400,500), (2,400), (20,400)
+    
+    Set up a connected DiGraph for this structure:
+    
+    >>> import networkx as nx
+    >>> BHCg = nx.DiGraph()
+    >>> BHCg.add_edges_from([(1,2), (2,3)])
+    >>> BHCg.add_edges_from([(10,20), (20,30)])
+    >>> BHCg.add_edges_from([(400,500), (2,400), (20,400)])
+    >>> sorted(BHCg.nodes)
+    [1, 2, 3, 10, 20, 30, 400, 500]
+    >>> sorted(BHCg.edges)
+    [(1, 2), (2, 3), (2, 400), (10, 20), (20, 30), (20, 400), (400, 500)]
+
+    The set of reachable nodes depends on the starting node:
+        
+    >>> sorted(reachable_nodes(BHCg, 1))
+    [1, 2, 3, 400, 500]
+    >>> len(reachable_nodes(BHCg, 1))
+    5
+    >>> sorted(reachable_nodes(BHCg, 10))
+    [10, 20, 30, 400, 500]
+    >>> sorted(reachable_nodes(BHCg, 20))
+    [20, 30, 400, 500]
+    >>> sorted(reachable_nodes(BHCg, 30))
+    [30]
+    
+    """
+    reachable = set()
+    return reachable
+            
+        
+    
 def high_holder_partition(BHC_graph):
     """Separates a directed graph into unambigous BHCs and joint ventures
     
@@ -661,6 +841,11 @@ def high_holder_partition(BHC_graph):
         These are collected in a dict where the keys are ordered 
         tuples of BHC high holders controlling the JVs, and each dict
         values is a list of the JV objects controlled by the high-holder team.
+    rogues : set
+        A set of IDs for entities that do not have a high holder. That 
+        is, there is no node of indegree zero that owns the rogues. The
+        simplest instance of this is a binary partnership, A <--> B, in 
+        which two entities, A and B, mutually own stakes in each other. 
             
     Examples
     --------
@@ -692,7 +877,7 @@ def high_holder_partition(BHC_graph):
     >>> sorted(BHCs[10].nodes)
     [10, 20, 30]
     
-    There is a single joint venture here. JVs is a dict keyed by the 
+    There is a single joint venture here. JVs is a dictionary keyed by the 
     high-holder team(s) controlling each JV:
     
     >>> len(JVs)
@@ -700,7 +885,7 @@ def high_holder_partition(BHC_graph):
     >>> print(type(JVs))
     <class 'dict'>
     
-    For each high-holder team, the dict contains a list of that team's 
+    For each high-holder team, the dictionary contains a list of that team's 
     joint ventures. In this example, (1,10) is the only high-holder team:
     
     >>> HHteam = (1,10)
@@ -734,10 +919,14 @@ def high_holder_partition(BHC_graph):
         raise ValueError('Cannot process multiple components in BHC_graph: '+
                          str(BHC_graph.nodes))
     # Only nodes with indegree==0 (the IN0 set) can possibly be high holders
-    IN0 = set()
-    for ent in BHC_graph.nodes:
-        if (0==BHC_graph.in_degree(ent)):
-            IN0.add(ent)
+    # The indegree counts for every node in BHC
+    indegrees = dict(BHC_graph.in_degree())
+    # IN0 is the set of all nodes with indegree==0
+    IN0 = set([ent for ent, deg in indegrees.items() if 0==deg])
+#    IN0 = set()
+#    for ent in BHC_graph.nodes:
+#        if (0==BHC_graph.in_degree(ent)):
+#            IN0.add(ent)
     # For each entity in BHC_graph, find the IN0 entities that control it
     controllers = dict()
     for in0 in IN0:
@@ -748,9 +937,9 @@ def high_holder_partition(BHC_graph):
             controllers[ent].add(in0)
     # Find the rogues -- entities that do not descend from *any* high holder
     rogues = set(BHC_graph).difference(set(controllers.keys()))
-    if (len(rogues) > 0):
-        # This really should never occur; something strange is going on
-        raise BHCanalyzeError('Rogue nodes detected: '+str(rogues))
+#    if (len(rogues) > 0):
+#        # This really should never occur; something strange is going on
+#        raise BHCanalyzeError('Rogue nodes detected: '+str(rogues))
     # For each node in IN0, find the set of uniquely controlled descendants
     BHC0_nodes = {in0: set([in0]) for in0 in IN0}
     JV_nodes = dict()
@@ -788,87 +977,87 @@ def high_holder_partition(BHC_graph):
             jv_bridges = (innies.union(outies)).difference(set(jv.edges))
             jvs.append((jv, jv_bridges))
         JVs[jvk] = jvs
-    return (BHCs, JVs)
+    return (BHCs, JVs, rogues)
 
 
 
-def find_highholders(BankSys, rssd):
-    """Scans a banking system to find all high holders for a given entity.
-    
-    The banking system (BankSys) object is a directed graph, with edge
-    orientations defined by ownership/control relationships of the NIC. 
-    Starting from a given entity (rssd), this function examines the 
-    banking system to find all entities that:
-        
-      * are ancestors of rssd (including possibly rssd itself), and
-      * have no immediate parents themselves. 
-     
-    In other words, the high-holder list contains any nodes in the 
-    hierarchy that are "upstream" of rssd, and have no parents. It is
-    possible for rssd to be its own high-holder, including the case where
-    it is a free-standing institution that participates in no 
-    ownership/control relationships.
-    
-    Parameters
-    ----------
-    BankSys : networkx.DiGraph
-        A directed graph representing the banking system at a point in time
-    rssd : int
-        Identifier indicating a specific legal entity node in BankSys
-    
-    Returns
-    -------
-    HHs : list
-        A list of the high holders of rssd in BankSys
-    BHC : networkx DiGraph
-        The BHC graph containing rssd
-        
-    Examples
-    --------
-    Consider a graph of two holding companies (1,2,3) and (10,20,30), which
-    together own a joint venture subgraph (400,500). The directed edges in 
-    the graph consist of:
-        * First BHC: (1,2), (2,3)
-        * Second BHC: (10,20), (20,30)
-        * Joint venture: (400,500), (2,400), (20,400)
-    
-    Set up a connected DiGraph involving a joint venture:
-    
-    >>> import networkx as nx
-    >>> BHCg = nx.DiGraph()
-    >>> BHCg.add_edges_from([(1,2), (2,3)])
-    >>> BHCg.add_edges_from([(10,20), (20,30)])
-    >>> BHCg.add_edges_from([(400,500), (2,400), (20,400)])
-    >>> sorted(BHCg.nodes)
-    [1, 2, 3, 10, 20, 30, 400, 500]
-    
-    Inspect the BHC for high holders:
-    
-    >>> (HHs, BHC) = find_highholders(BHCg, 3)
-    >>> HHs
-    [1]
-    >>> (HHs, BHC) = find_highholders(BHCg, 30)
-    >>> HHs
-    [10]
-    >>> (HHs, BHC) = find_highholders(BHCg, 400)
-    >>> HHs
-    [1, 10]
-    >>> sorted(BHC.nodes)
-    [1, 2, 3, 10, 20, 30, 400, 500]
-    
-    """
-    BankSysU = BankSys.to_undirected()
-    BHCu = nx.algorithms.components.node_connected_component(BankSysU, rssd)
-    BHC = BankSys.subgraph(BHCu)
-    IN0 = set()
-    for ent in BHC:
-        if not(0==BHC.in_degree(ent)):
-            continue
-        reach = nx.algorithms.shortest_paths.generic.has_path(BHC, ent, rssd)
-        if (reach):
-            IN0.add(ent)
-    HHs = sorted(IN0)
-    return (HHs, BHC)
+#def find_highholders(BankSys, rssd):
+#    """Scans a banking system to find all high holders for a given entity.
+#    
+#    The banking system (BankSys) object is a directed graph, with edge
+#    orientations defined by ownership/control relationships of the NIC. 
+#    Starting from a given entity (rssd), this function examines the 
+#    banking system to find all entities that:
+#        
+#      * are ancestors of rssd (including possibly rssd itself), and
+#      * have no immediate parents themselves. 
+#     
+#    In other words, the high-holder list contains any nodes in the 
+#    hierarchy that are "upstream" of rssd, and have no parents. It is
+#    possible for rssd to be its own high-holder, including the case where
+#    it is a free-standing institution that participates in no 
+#    ownership/control relationships.
+#    
+#    Parameters
+#    ----------
+#    BankSys : networkx.DiGraph
+#        A directed graph representing the banking system at a point in time
+#    rssd : int
+#        Identifier indicating a specific legal entity node in BankSys
+#    
+#    Returns
+#    -------
+#    HHs : list
+#        A list of the high holders of rssd in BankSys
+#    BHC : networkx DiGraph
+#        The BHC graph containing rssd
+#        
+#    Examples
+#    --------
+#    Consider a graph of two holding companies (1,2,3) and (10,20,30), which
+#    together own a joint venture subgraph (400,500). The directed edges in 
+#    the graph consist of:
+#        * First BHC: (1,2), (2,3)
+#        * Second BHC: (10,20), (20,30)
+#        * Joint venture: (400,500), (2,400), (20,400)
+#    
+#    Set up a connected DiGraph involving a joint venture:
+#    
+#    >>> import networkx as nx
+#    >>> BHCg = nx.DiGraph()
+#    >>> BHCg.add_edges_from([(1,2), (2,3)])
+#    >>> BHCg.add_edges_from([(10,20), (20,30)])
+#    >>> BHCg.add_edges_from([(400,500), (2,400), (20,400)])
+#    >>> sorted(BHCg.nodes)
+#    [1, 2, 3, 10, 20, 30, 400, 500]
+#    
+#    Inspect the BHC for high holders:
+#    
+#    >>> (HHs, BHC) = find_highholders(BHCg, 3)
+#    >>> HHs
+#    [1]
+#    >>> (HHs, BHC) = find_highholders(BHCg, 30)
+#    >>> HHs
+#    [10]
+#    >>> (HHs, BHC) = find_highholders(BHCg, 400)
+#    >>> HHs
+#    [1, 10]
+#    >>> sorted(BHC.nodes)
+#    [1, 2, 3, 10, 20, 30, 400, 500]
+#    
+#    """
+#    BankSysU = BankSys.to_undirected()
+#    BHCu = nx.algorithms.components.node_connected_component(BankSysU, rssd)
+#    BHC = BankSys.subgraph(BHCu)
+#    IN0 = set()
+#    for ent in BHC:
+#        if not(0==BHC.in_degree(ent)):
+#            continue
+#        reach = nx.algorithms.shortest_paths.generic.has_path(BHC, ent, rssd)
+#        if (reach):
+#            IN0.add(ent)
+#    HHs = sorted(IN0)
+#    return (HHs, BHC)
 
 
            
@@ -984,6 +1173,145 @@ def check_lei(lei, display_warnings=True):
         if (display_warnings and 1!=check): 
             print('WARNING: LEI fails checksum:', lei, "modulus="+str(check))
     return (check, syntax_errcodes)
+
+
+# String constants for metric names
+M_BVct = 'Bas_Vertex_count'
+M_BEct = 'Bas_Edge_count'
+M_BCrk = 'Bas_Cycle_rank'
+M_BCmp = 'Bas_Num_CComp'
+M_EQfxB = 'Ent_Qfull_B1'
+M_EQhxB = 'Ent_Qhetr_B1'
+M_EQfcB = 'Ent_Qfcon_B1'
+M_EQhcB = 'Ent_Qhcon_B1'
+M_EQecB = 'Ent_edgcn_B1'
+M_EDHmB = 'Ent_DjHom_B1'
+M_EDHmM = 'Ent_DjHom_M'
+M_ENlbl = 'Ent_Nlabl'
+M_GQfxB = 'Geo_Qfull_B1'
+M_GQhxB = 'Geo_Qhetr_B1'
+M_GQfcB = 'Geo_Qfcon_B1'
+M_GQhcB = 'Geo_Qhcon_B1'
+M_GQecB = 'Geo_edgcn_B1'
+M_GDHmB = 'Geo_DjHom_B1'
+M_GDHmM = 'Geo_DjHom_M'
+M_GNlbl = 'Geo_Nlabl'
+
+def complexity_workup(BHC):
+    """Calculates a standard set of complexity metrics for a BHC
+    
+    Most of the metrics involve quotienting the nodes of the BHC graph.
+    The nodes are quotiented by entity type and (separately) geographic
+    juridiction. 
+    
+    The following metrics are calculated:
+        
+    A. Basic metrics
+    
+      * Bas_Vertex_count = Number of nodes, original BHC graph 
+      * Bas_Edge_count   = Number of edges, BHC graph 
+      * Bas_Cycle_rank   = Cycle rank (b1), BHC graph 
+      * Bas_Num_CComp    = Number of connected components (b0), BHC graph
+      
+    B. Entity quotients
+    
+      * Ent_Qfull_B1     = Cycle rank, full entity quotient
+      * Ent_Qhetr_B1     = Cycle rank, heterogeneous entity quotient
+      * Ent_Qfcon_B1     = Cycle rank, condensed entity quotient
+      * Ent_Qhcon_B1     = Cycle rank, heterogeneous condensed entity quotient
+      * Ent_edgcn_B1 = 'Ent_edgcn_B1'
+      * Ent_DjHom_B1 = 'Ent_DjHom_B1'
+      * Ent_DjHom_M = 'Ent_DjHom_M'
+      * Ent_Nlabl = 'Ent_Nlabl'
+      
+    B. Beography quotients
+    
+      * Geo_Qfull_B1 = 'Geo_Qfull_B1'
+      * Geo_Qhetr_B1 = 'Geo_Qhetr_B1'
+      * Geo_Qfcon_B1 = 'Geo_Qfcon_B1'
+      * Geo_Qhcon_B1 = 'Geo_Qhcon_B1'
+      * Geo_edgcn_B1 = 'Geo_edgcn_B1'
+      * Geo_DjHom_B1 = 'Geo_DjHom_B1'
+      * Geo_DjHom_M = 'Geo_DjHom_M'
+      * Geo_Nlabl = 'Geo_Nlabl'
+
+    Parameters
+    ----------
+    BHC : networkx.DiGraph
+        A directed graph representing a bank holding company
+    
+    Returns
+    -------
+    int
+        Components in the projection of BHC to a simple undirected graph
+        
+
+    """
+    
+    metrics = dict()
+    # Basic metrics, using the key constants defined above
+    metrics[M_BVct] = BHC.number_of_nodes()
+    metrics[M_BEct] = edge_count(BHC)
+    metrics[M_BCrk] = cycle_rank(BHC)
+    metrics[M_BCmp] = number_of_components(BHC)
+    # Quotiented by entity type
+    DIMEN = 'entity_type'
+    QEF = get_quotient(BHC, DIMEN, Q_FULL)
+    QEH = get_quotient(BHC, DIMEN, Q_HETERO)
+    QEFC = get_quotient(BHC, DIMEN, Q_FULL_COND)
+    QEHC = get_quotient(BHC, DIMEN, Q_HETERO_COND)
+    CE = get_contraction(BHC, DIMEN).to_undirected()
+    DMHE = get_disjoint_maximal_homogeneous_subgraphs(BHC, DIMEN)
+    metrics[M_EQfxB] = cycle_rank(QEF)
+    metrics[M_EQhxB] = cycle_rank(QEH)
+    metrics[M_EQfcB] = cycle_rank(QEFC)
+    metrics[M_EQhcB] = cycle_rank(QEHC)
+    metrics[M_EQecB] = cycle_rank(CE)
+    metrics[M_EDHmB] = cycle_rank(DMHE)
+    metrics[M_EDHmM] = number_of_components(DMHE)
+    metrics[M_ENlbl] = len(get_labels(BHC, DIMEN))
+    # Quotiented by geographic jurisdiction
+    DIMEN = 'GEO_JURISD'
+    QGF = get_quotient(BHC, DIMEN, Q_FULL)
+    QGH = get_quotient(BHC, DIMEN, Q_HETERO)
+    QGFC = get_quotient(BHC, DIMEN, Q_FULL_COND)
+    QGHC = get_quotient(BHC, DIMEN, Q_HETERO_COND)
+    CG = get_contraction(BHC, DIMEN).to_undirected()
+    DMHG = get_disjoint_maximal_homogeneous_subgraphs(BHC, DIMEN)
+    metrics[M_GQfxB] = cycle_rank(QGF)
+    metrics[M_GQhxB] = cycle_rank(QGH)
+    metrics[M_GQfcB] = cycle_rank(QGFC)
+    metrics[M_GQhcB] = cycle_rank(QGHC)
+    metrics[M_GQecB] = cycle_rank(CG)
+    metrics[M_GDHmB] = cycle_rank(DMHG)
+    metrics[M_GDHmM] = number_of_components(DMHG)
+    metrics[M_GNlbl] = len(get_labels(BHC, DIMEN))
+    return metrics
+
+
+## Calculates a full set of complexity metrics for a BHC, quotienting by
+## both entity type and geographic jurisdiction, and returns them as a dict.
+#def test_metrics(metrics, context):
+#    # Ensure that the BHC is a single connected component
+#    if (1 != metrics[M_BCmp]):
+#        LOG.error('BHC is not completely connected. '+M_BCmp+': '+str(metrics[M_BCmp])+', Context: '+context)
+#    # Confirm that Equation 3 (Euler-Poincare) holds
+#    if (metrics[M_BCrk] != metrics[M_BEct] - metrics[M_BVct] + metrics[M_BCmp]):
+#        LOG.error('Euler-Poincare fails. '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_BEct+': '+str(metrics[M_BEct])+', '+M_BVct+': '+str(metrics[M_BVct])+', '+M_BCmp+': '+str(metrics[M_BCmp])+', Context: '+context)
+#
+#    # Confirm that Theorem 3.2 Equation 6 (NBER version) holds -- entity type
+#    if (metrics[M_EQfxB] != metrics[M_BCrk] + metrics[M_BVct] - metrics[M_ENlbl]):
+#        LOG.error('Theorem 3.2 fails. '+M_EQfxB+': '+str(metrics[M_EQfxB])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_BVct+': '+str(metrics[M_BVct])+', '+M_ENlbl+': '+str(metrics[M_ENlbl])+', Context: '+context)
+#    # Confirm that Corollary 3.4 (NBER version) holds -- entity type
+#    if (metrics[M_EQhxB] != metrics[M_EDHmM] - metrics[M_ENlbl] + metrics[M_BCrk] - metrics[M_EDHmB]):
+#        LOG.error('Corollary 3.4 fails. '+M_EQhxB+': '+str(metrics[M_EQhxB])+', '+M_EDHmM+': '+str(metrics[M_EDHmM])+', '+M_ENlbl+': '+str(metrics[M_ENlbl])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_EDHmB+': '+str(metrics[M_EDHmB])+', Context: '+context)
+#
+#    # Confirm that Theorem 3.2 Equation 6 (NBER version) holds -- geography
+#    if (metrics[M_GQfxB] != metrics[M_BCrk] + metrics[M_BVct] - metrics[M_GNlbl]):
+#        LOG.error('Theorem 3.2 fails (Geographic quotient). '+M_GQfxB+': '+str(metrics[M_GQfxB])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_BVct+': '+str(metrics[M_BVct])+', '+M_GNlbl+': '+str(metrics[M_GNlbl])+', Context: '+context)
+#    # Confirm that Corollary 3.4 (NBER version) holds -- geography
+#    if (metrics[M_GQhxB] != metrics[M_GDHmM] - metrics[M_GNlbl] + metrics[M_BCrk] - metrics[M_GDHmB]):
+#        print('ERROR: Corollary 3.4 fails (Geographic quotient). '+M_GQhxB+': '+str(metrics[M_GQhxB])+', '+M_GDHmM+': '+str(metrics[M_GDHmM])+', '+M_GNlbl+': '+str(metrics[M_GNlbl])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_GDHmB+': '+str(metrics[M_GDHmB])+', Context: '+context)
 
 
 

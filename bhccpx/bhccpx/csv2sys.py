@@ -27,7 +27,6 @@ import os
 import logging
 
 import networkx as nx
-import _pickle as pik
 import multiprocessing as mp
 import progressbar as pb
 
@@ -49,6 +48,8 @@ MAP_HH2RSSD = 7
 
 
 def cache_spec(config, asofdate):
+    """Creates a cache specification dictionary from a config object.
+    """
     spec = dict()
     sect = config['csv2sys']
     spec['asofdate'] = asofdate
@@ -70,6 +71,10 @@ def cache_spec(config, asofdate):
     spec['fdicsod_dir'] = sect['fdicsod_dir']
     spec['fdicsod_filelist'] = eval(sect['fdicsod_csv_filelist'])
     spec['fdicsod_clearcache'] = ('TRUE'==sect['clearcache_fdicsod'].upper())
+    # FDIC fail items
+    spec['fdicfail_dir'] = sect['fdicfail_dir']
+    spec['fdicfail_file'] = sect['fdicfail_csv_file']
+    spec['fdicfail_clearcache'] = ('TRUE'==sect['clearcache_fdicfail'].upper())
     # BankSys items
     spec['banksys_clearcache'] = ('TRUE'==sect['clearcache_banksys'].upper())
     # IDmaps items
@@ -89,33 +94,21 @@ def make_banksys(config, asofdate, read_data=False):
     whose edges point from parent nodes to offspring nodes. 
     The function then returns this digraph (either newly created or unpickled). 
     """
+    UTIL.tic()
     sysfilename = 'NIC_'+str(asofdate)+'.pik'
     sysfilepath = os.path.join(config['csv2sys']['cachedir'], sysfilename)
     trace_logging = ('TRUE'==config['csv2sys']['trace_logging'].upper())
     spec = cache_spec(config, asofdate)
     BankSys = DATA.fetch_data(spec, DATA.case_BankSys)
+    LOG.info(f'PROFILE fetch_data BankSys {asofdate} took {UTIL.toc()} secs.')
+
     LOG.info(f'Processing for asofdate={asofdate}')
-#    if os.path.isfile(sysfilepath):
-#        LOG.info('FOUND: Banking system file: '+sysfilepath+
-#                 ' for as-of date: '+str(asofdate))
-#        if (read_data):
-#            f = open(sysfilepath, 'rb')
-#            BankSys = pik.load(f)
-#            f.close()
-#        else:
-#            LOG.debug('Not reading: '+sysfilepath+' (read_data==False)')
     if (BankSys is None):
+        LOG.info(f'Cache not found for BankSys as of {asofdate}, creating')
         NICdata = DATA.fetch_data(spec, DATA.case_NIC)
         ATTdf = NICdata[DATA.IDX_Attributes]
         RELdf = NICdata[DATA.IDX_Relationships]
         BankSys = nx.DiGraph()
-#        relfilename = config['csv2sys']['relationships']
-#        nicdir = DATA.resolve_dir_nic(config['csv2sys']['nic_dir'], 
-#                                      config['csv2sys']['nic_subdir'])
-#        csvfilepath = os.path.join(nicdir, relfilename)
-#        LOG.info('Reading relationshipx file: '+csvfilepath)
-#        delim = UTIL.delim_norm(config['csv2sys']['delim'])
-#        RELdf = DATA.RELcsv2df(csvfilepath, asofdate, sep=delim)
         LOG.debug(f'Relationships table has {len(RELdf)} obs')
         for row in RELdf.iterrows():
             date0 = int(row[1]['DT_START'])
@@ -135,24 +128,19 @@ def make_banksys(config, asofdate, read_data=False):
         LOG.info('System (pre), asofdate='+str(asofdate)+' has '+
                  str(BankSys.number_of_nodes())+' nodes and '+
                  str(BankSys.number_of_edges())+' edges ')
-#        fA = config['csv2sys']['attributesactive']
-#        fB = config['csv2sys']['attributesbranch']
-#        fC = config['csv2sys']['attributesclosed']
-#        ATTdf = DATA.makeATTs(nicdir, fA, fB, fC, asofdate, 
-#                              sep=delim, filter_asof=True)
         ATTdf = ATTdf[ATTdf.DT_END >= asofdate]
         ATTdf = ATTdf[ATTdf.DT_OPEN <= asofdate]
         nodes_BankSys = set(BankSys.nodes)
         nodes_ATTdf = set(ATTdf['ID_RSSD'].unique())
         nodes_new = nodes_ATTdf.difference(nodes_BankSys)
         BankSys.add_nodes_from(nodes_new)
+        LOG.info(f'PROFILE building BankSys {asofdate} took {UTIL.toc()} secs.')
+
         # Storing the new banking system file
         LOG.info(f'CACHING: System file: {sysfilepath}')
         DATA.cache_data(spec, DATA.case_BankSys, BankSys)
-#        f = open(sysfilepath, 'wb')
-#        pik.dump(BankSys, f)
-#        f.close()
-#        LOG.debug('CACHED: System file: '+sysfilepath)
+        LOG.info(f'PROFILE cache_data BankSys {asofdate} took {UTIL.toc()} secs.')
+
         LOG.debug(f'System (pre), asofdate={asofdate} has {BankSys.number_of_nodes()} nodes and {BankSys.number_of_edges()} edges; {len(nodes_new)} added, out of {len(nodes_ATTdf)} candidates')
     return BankSys
     
@@ -177,12 +165,6 @@ def build_sys(config):
           * config['csv2sys']['asofdate0']
           * config['csv2sys']['asofdate1']
     """
-    # If clearcache, then remove existing banking system pik files and recreate
-#    if ('TRUE'==config['csv2sys']['clearcache_nic'].upper()):
-#        LOG.warning('Clearing output cache of *.pik files in the range: '+
-#            config['csv2sys']['asofdate0']+'-'+config['csv2sys']['asofdate1'])
-#        DATA.clear_cache(config['csv2sys']['cachedir'], 'NIC_',
-#            config['csv2sys']['asofdate0'], config['csv2sys']['asofdate1'])
     asof_list = UTIL.assemble_asofs(config['csv2sys']['asofdate0'], 
                                     config['csv2sys']['asofdate1'])
     LOG.info('As-of dates for NIC data: '+str(asof_list))
@@ -207,599 +189,361 @@ def build_sys(config):
 
 
 
-
-#def build_hhdata(config):
-#    """Caches the FDIC CB data containing high-holder mappings
-#    
-#    Converts the FDIC CB data into Pandas dataframes, each representing
-#    the high-holder relationships at a given as-of date.
-#    The new dataframe objects are stored in the local cache for faster 
-#    subsequent retrieval. However, if requested, this function will clear 
-#    existing versions of the requested dataframes from the cache 
-#    before beginning. 
-#    
-#    Parameters
-#    ----------
-#    config : ConfigParser object
-#        The key parameters are:
-#          * config['csv2sys']['clearcache_fdiccb']
-#          * config['csv2sys']['cachedir'] 
-#          * config['csv2sys']['asofdate0']
-#          * config['csv2sys']['asofdate1']
-#    """
-#    
-#    if ('TRUE'==config['csv2sys']['clearcache_fdiccb'].upper()):
-#        # Remove cached pik files and recreate
-#        LOG.debug('Clearing output cache of *.pik files in the range: '+
-#            config['csv2sys']['asofdate0']+'-'+config['csv2sys']['asofdate1'])
-#        DATA.clear_cache(config['csv2sys']['cachedir'], 'FDICCB_',
-#            config['csv2sys']['asofdate0'], config['csv2sys']['asofdate1'])
-#        
-#    asof_list = UTIL.assemble_asofs(config['csv2sys']['asofdate0'], 
-#                                    config['csv2sys']['asofdate1'])
-#    LOG.info('As-of dates for FDIC CB: '+str(asof_list))
-#    if (int(config['csv2sys']['parallel']) > 0):
-#        # Parallel processing of each requested asofdate
-#        LOG.info('Begin parallel processing ('+str(len(asof_list))+
-#                    ' tasks across '+config['csv2sys']['parallel']+
-#                    ' cores) of high-holders')
-#        pcount = min(int(config['csv2sys']['parallel']), 
-#                     os.cpu_count(), len(asof_list))
-#        pool = mp.Pool(processes=pcount)
-#        for asof in asof_list:
-#            pool.apply_async(make_fdiccb_data, (config, asof))
-#        pool.close()
-#        pool.join()
-#        LOG.info('Complete parallel processing of high-holders')
-#    else:
-#        # Sequential processing of each requested asofdate
-#        LOG.info('Begin sequential processing of high-holders ('+ 
-#              str(len(asof_list))+' dates)')
-#        for asof in pb.progressbar(asof_list, redirect_stdout=True):
-#             make_fdiccb_data(config, asof)
-#        LOG.info('Complete sequential processing of high-holders')
-    
-#def maps_rssd_cert(data):
-#    rssd2cert = dict()
-#    cert2rssd = dict()
-#    ATTdf = data[DATA.IDX_Attributes]
-#    ATTdf = ATTdf[ATTdf.ID_FDIC_CERT > 0]
-#    for idx,row in ATTdf.iterrows():
-#        rssd = idx
-#        cert = row['ID_FDIC_CERT']
-#        rssd2cert[rssd] = cert
-#        cert2rssd[cert] = rssd
-#    return (rssd2cert, cert2rssd)
-#
-#
-
 def get_idmaps(config, asofdate):
-#    id_filename = 'IDmaps_'+str(UTIL.rcnt_qtrend(asofdate))+'.pik'
-#    id_filepath = os.path.join(config['csv2sys']['cachedir'], id_filename)
-#    LOG.info('Processing IDmaps, asofdate='+str(asofdate))
+        
     spec = cache_spec(config, asofdate)
     IDmaps = DATA.fetch_data(spec, DATA.case_IDmaps)
-#    if os.path.isfile(id_filepath):
-#        LOG.info('Found ID maps file: '+id_filepath)
-#        if (read_data):
-#            f = open(id_filepath, 'rb')
-#            IDmaps = pik.load(f)
-#            f.close()
-#        else:
-#            LOG.debug('Not reading: '+id_filepath+' (read_data==False)')
+    
     if (IDmaps is None):
-        LOG.info('ID maps file not found: {id_filepath}, building instead')
+        UTIL.tic()
+        
+        # Assembling the raw materials
         LOG.info(f'Building BankSys object for {asofdate}')
         BankSys = make_banksys(config, asofdate, read_data=True)
-#        fA = config['csv2sys']['attributesactive']
-#        fB = config['csv2sys']['attributesbranch']
-#        fC = config['csv2sys']['attributesclosed']
-#        nicdir = DATA.resolve_dir_nic(config['csv2sys']['nic_dir'], 
-#                                      config['csv2sys']['nic_subdir'])
-#        delim = UTIL.delim_norm(config['csv2sys']['delim'])
+        LOG.info(f'PROFILE {UTIL.toc()} secs: make_banksys {asofdate}')
+        
         LOG.debug(f'Assembling cache spec for {asofdate}')
         LOG.info(f'Building NICATTdf object for {asofdate}')
-        NICATTdf = DATA.fetch_data(spec, DATA.case_NIC)[DATA.IDX_Attributes]
-        LOG.info(f'Building FDICCBdf object for {asofdate}')
-        FDICCBdf = DATA.fetch_data(spec, DATA.case_FDICCB)
+        NICdata = DATA.fetch_data(spec, DATA.case_NIC)
+        NICATTdf = NICdata[DATA.IDX_Attributes]
+        LOG.info(f'PROFILE {UTIL.toc()} secs: fetch NICdata {asofdate}')
+        
+#        LOG.info(f'Building FDICCBdf object for {asofdate}')
+#        FDICCBdf = DATA.fetch_data(spec, DATA.case_FDICCB)
+#        LOG.info(f'PROFILE {UTIL.toc()} secs: fetch FDICCBdf {asofdate}')
+        
         LOG.info(f'Building FDICSoDdf object for {asofdate}')
         FDICSoDdf = DATA.fetch_data(spec, DATA.case_FDICSoD)
-#        FDICSoDcsv2df(config['csv2sys']['attributesclosed'])
-        IDdata = (BankSys, NICATTdf, FDICCBdf, FDICSoDdf)
-        # Make all the ID mappings
-        LOG.info(f'Building CERT-HCR and CERT-RSSD objects for {asofdate}')
-        (CERT2HCR, HCR2CERT, CERT2RSSD, RSSD2CERT) = \
-            make_idmaps_CERT_HCR_RSSD(config, asofdate, IDdata)  
-#        (CERT2RSSD,RSSD2CERT) = make_idmaps_CERT_RSSD(config, asofdate, IDdata)
-        LOG.info(f'Building RSSD-HCR objects for {asofdate}')
-        (RSSD2HCR,HCR2RSSD) = \
-            make_idmaps_HCR_RSSD(config, asofdate, IDdata, RSSD2CERT, CERT2HCR)
-        LOG.info(f'Building HH-RSSD objects for {asofdate}')
-        (RSSD2HH,HH2RSSD) = make_idmaps_HH_RSSD(config, asofdate, IDdata)
-        # Pack and pickle the ID mappings
-        IDmaps = (CERT2HCR, HCR2CERT, CERT2RSSD, RSSD2CERT, 
-                  RSSD2HCR, HCR2RSSD, RSSD2HH, HH2RSSD)
-#        IDmaps = (CERT2HCR, HCR2CERT, CERT2RSSD, RSSD2CERT, 
-#                  RSSD2HCR, HCR2RSSD)
-#        IDlens = (len(CERT2HCR), len(HCR2CERT), len(CERT2RSSD), len(RSSD2CERT), 
-#                  len(RSSD2HCR), len(HCR2RSSD))
+        FDICSoDdf = FDICSoDdf[FDICSoDdf['BRNUM']==0]        # Main office only
+        LOG.info(f'PROFILE {UTIL.toc()} secs. fetch FDICSoDdf {asofdate}')
+        
+        # Building RSSD2CERT from BankSys, FDIC SoD, and NIC data
+        RSSD2CERT = dict.fromkeys(BankSys.nodes, 0)
+        dfQ = f'RSSDID > 0'
+        resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDID']]
+        RSSD2CERTsod = dict(zip(resultset.RSSDID, resultset.CERT))
+        dfQ = f'ID_FDIC_CERT > 0'
+        resultset = NICATTdf.query(dfQ)[['ID_FDIC_CERT', 'ID_RSSD']]
+        RSSD2CERTnic = dict(zip(resultset.ID_RSSD, resultset.ID_FDIC_CERT))
+        if (True):
+            RSSD2CERT.update(RSSD2CERTsod)
+            RSSD2CERT.update(RSSD2CERTnic)
+        else:
+            RSSD2CERT.update(RSSD2CERTnic)
+            RSSD2CERT.update(RSSD2CERTsod)
+        LOG.info(f'PROFILE {UTIL.toc()} secs. RSSD2CERT {asofdate}')
+        
+        # Reversing the mapping:  CERT2RSSD
+        CERT2RSSD = dict()
+        for k, v in RSSD2CERT.items():
+            CERT2RSSD.setdefault(v, set()).add(k)
+        LOG.info(f'PROFILE {UTIL.toc()} secs. CERT2RSSD {asofdate}')
+        
+        # Building CERT2HCR from FDIC SoD data
+        dfQ = f'CERT > 0'
+        resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDHCR']]
+        CERT2HCR = dict(zip(resultset.CERT, resultset.RSSDHCR))
+        LOG.info(f'PROFILE {UTIL.toc()} secs. CERT2HCR {asofdate}')
+        
+        # Reversing the mapping:  HCR2CERT
+        HCR2CERT = dict()
+        for k, v in CERT2HCR.items():
+            HCR2CERT.setdefault(v, set()).add(k)
+        LOG.info(f'PROFILE {UTIL.toc()} secs. HCR2CERT {asofdate}')
+        
+        IDmaps = (CERT2HCR, HCR2CERT, CERT2RSSD, RSSD2CERT)
         DATA.cache_data(spec, DATA.case_IDmaps, IDmaps)
-#        LOG.info('CACHING: IDmaps file: '+id_filepath)
-#        f = open(id_filepath, 'wb')
-#        pik.dump(IDmaps, f)
-#        f.close()
-#        LOG.debug('CACHED: IDmaps file: '+id_filepath)
-        IDlens = (len(CERT2HCR), len(HCR2CERT), len(CERT2RSSD), len(RSSD2CERT), 
-                  len(RSSD2HCR), len(HCR2RSSD), len(RSSD2HH), len(HH2RSSD))
+        LOG.info(f'PROFILE {UTIL.toc()} secs: cache_data {asofdate}')
+        
+        IDlens = (len(CERT2HCR), len(HCR2CERT), len(CERT2RSSD), len(RSSD2CERT))
         LOG.debug(f'IDmaps have {IDlens} obs')
     else:
         LOG.info('ID maps found')
     return IDmaps
+
+
+
+def make_fail_cpx(config):
+    spec = cache_spec(config)
+    FDICFailsdf = DATA.fetch_data(spec, DATA.case_FDICFail)
+    FDICFailsdf['LOA'] = FDICFailsdf.COST / FDICFailsdf.QBFASSET
+    FDICFailsdf['LOD'] = FDICFailsdf.COST / FDICFailsdf.QBFDEP
+    
+def get_idmaps_extra(config, asofdate):
+
+#        # Assembling the raw materials
+#        LOG.info(f'Building BankSys object for {asofdate}')
+#        BankSys = make_banksys(config, asofdate, read_data=True)
+#        BankSysU = BankSys.to_undirected()
+#        LOG.info(f'PROFILE {UTIL.toc()} secs: make_banksys {asofdate}')
+#        
+#        LOG.debug(f'Assembling cache spec for {asofdate}')
+#        LOG.info(f'Building NICATTdf object for {asofdate}')
+#        NICdata = DATA.fetch_data(spec, DATA.case_NIC)
+#        NICATTdf = NICdata[DATA.IDX_Attributes]
+#        LOG.info(f'PROFILE {UTIL.toc()} secs: fetch NICdata {asofdate}')
         
-def make_idmaps_CERT_HCR_RSSD(config, asofdate, IDdata):
-    """Scans the NIC and FDIC data for CERT-HCR mappings for the asofdate
-    
-    Many RSSDs will not have a CERT, because the CERT only applies to 
-    FDIC-insured depository institutions, and there are many other 
-    uninsured entity types in the NIC. If no CERT is found, the entity
-    is ignored by both the CERT2HCR and HCR2CERT mappings. 
-    
-    Many CERTs will not have an HCR, because there exist free-standing 
-    banks that are not a member of any holding company. If a CERT exists, 
-    but no matching HCR is found, the entity will appear in the 
-    CERT2HCR mapping (pointing to HCR=0), but there will be no 
-    corresponding entry in the HCR2CERT mapping.
+        RSSD2HCR = dict.fromkeys(BankSys.nodes, -1)
+        RSSD2HH = dict.fromkeys(BankSys.nodes, -1)
+        HCR2RSSD = {0 : set()}
+        HH2RSSD = {0 : set()}
+        allHCRs = frozenset(HCR2CERT.keys())
+        compct = nx.algorithms.components.number_connected_components(BankSysU)
+        LOG.info(f'There are {compct} components, as of {asofdate}')
+        comp_counter = 0 
+        for comp in nx.connected_components(BankSysU):
+            LOG.debug(f'Processing component {comp_counter}, as of {asofdate}')
+            comp_counter = comp_counter + 1
+            bhc = BankSys.subgraph(comp)
+            (hh, case) = bhca.high_holder_impute(bhc)
 
-    """
-    LOG.info('Beginning mappings for asofdate='+str(asofdate))
-    trace_logging = ('TRUE'==config['csv2sys']['trace_logging'].upper())
-    BankSys = IDdata[0]
-    NICATTdf =  IDdata[1]
-    FDICCBdf =  IDdata[2]
-    FDICSoDdf =  IDdata[3]
-    CERT2HCR = dict()
-    HCR2CERT = dict()
-    CERT2RSSD = dict()
-    RSSD2CERT = dict()
-    processed = set()
-    SysU = BankSys.to_undirected()
-    for E in BankSys:
-        if (trace_logging):
-            LOG.debug(f'Processing RSSD={E}, asofdate={asofdate}')
-        if (E in processed):
-            continue
-        # Nodes in the graph component that contains entity E
-        BHCnodes = nx.algorithms.components.node_connected_component(SysU, E)
-        hcrset = set()
-        for rssd in BHCnodes:
-            cert_found = False
-            hcr_found = False
-            # First, check the NIC attributes to look up the RSSD and CERT
-            dfQ = f'rssd=={rssd}'
-            resultset = NICATTdf.query(dfQ)[['ID_FDIC_CERT', 'ID_RSSD']]
-            for i in range(len(resultset)):
-                cert = resultset.iat[i,0]
-                if (cert > 0):
-                    cert_found = True
-                    continue
-            if (len(resultset)>1):
-                LOG.info(f'Multiple matches for RSSD={rssd} in NIC attributes')
-            elif (len(resultset)<1):
-                LOG.info(f'RSSD={rssd} not in NIC attrs, asofdate={asofdate}')
-            # Fall back and try the FDIC SoD data
-            if not(cert_found):
-                dfQ = f'RSSDID=={rssd}'
-                resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDID', 'RSSDHCR']]
-                for i in range(len(resultset)):
-                    cert = resultset.iat[i,0]
-                    if (cert > 0):
-                        cert_found = True
-                        continue
-            # CERT search is over, one way or the other
-            if not(cert_found):
-                if (trace_logging):
-                    LOG.debug(f'No CERT found for RSSD={rssd}')
-                processed.add(rssd)
+            # Handle the HH calculations
+            if (1==len(comp)):
+                # Singleton component
+                rssd = next(iter(comp))
+                LOG.debug(f'Singleton node: {rssd}, as of {asofdate}')
+                RSSD2HH[rssd] = rssd
+                HH2RSSD[rssd] = comp
             else:
-                # We have a CERT, now look for the matching HCR
-                dfQ = f'cert=={cert}'
-                resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDID', 'RSSDHCR']]
-                for i in range(len(resultset)):
-                    hcr = resultset.iat[i,2]
-                    if (hcr > 0):
-                        hcr_found = True
-                        hcrset.add(hcr)
-                        continue
-                if not(hcr_found):
-                    # Last place to look for HCR is in the FDIC CB data
-                    resultset = FDICCBdf.query(dfQ)[['CERT', 'RSSDHCR']]
-                    for i in range(len(resultset)):
-                        hcr = resultset.iat[i,1]
-                        if (hcr > 0):
-                            hcr_found = True
-                            hcrset.add(hcr)
-                            LOG.info(f'HCR={hcr} for {rssd} found in CB data')
-                            continue
-            if (cert_found):
-                CERT2RSSD[cert] = rssd
-                RSSD2CERT[rssd] = cert
-                if (hcr_found):
-                    CERT2HCR[cert] = hcr
-                    HCR2CERT[hcr] = cert
+                # Component with multiple entities
+                if (0==case):
+                    # There is a unique HH node (entity of indegree==0)
+                    RSSD2HH.update(dict.fromkeys(comp, hh))
+                    HH2RSSD[hh] = comp
+                elif (2==case):
+                    # There is no HH node at all -- a bit strange, but possible
+                    RSSD2HH.update(dict.fromkeys(comp, hh))
+                    HH2RSSD[hh] = comp
+                    fname = f'anomaly_{asofdate}_rogues_{hh}'
+                    msg = f'Rogue nodes {comp}, as of {asofdate}. '
+                    LOG.error(msg + ' SVG output to: '+fname)
+                    log_error_svg(config, bhc, NICdata, fname, msg)
                 else:
-                    CERT2HCR[cert] = 0
-            else:
-                RSSD2CERT[rssd] = 0
-            processed.add(rssd)
-        if (len(hcrset) > 1):
-            LOG.info(f'Multiple HCRs ({hcrset}) for component w/RSSD={rssd}')
-    LOG.info(f'Completing {len(processed)} mappings for asofdate={asofdate}')
-    LOG.info(f'Completing CERT2HCR:{len(CERT2HCR)}, HCR2CERT:{len(HCR2CERT)}, CERT2RSSD:{len(CERT2RSSD)}, RSSD2CERT:{len(RSSD2CERT)}')
-    return (CERT2HCR, HCR2CERT, CERT2RSSD, RSSD2CERT)
+                    # There are multiple HH nodes 
+                    indegrees = dict(bhc.in_degree())
+                    HHs = set([n for n, d in indegrees.items() if 0==d])
+                    eachHHs_desc = dict()
+                    HHsize = dict()
+                    for hhi in HHs:
+                        eachHHs_desc[hhi] = bhca.reachable_nodes(bhc, hhi)
+                        HHsize[hhi] = len(eachHHs_desc[hhi])
+                    unassigned_nodes = comp.copy()
+                    while len(HHsize)>0:
+                        maxHH =  max(HHsize, key=lambda key: HHsize[key])
+                        maxHH_desc = eachHHs_desc[maxHH]
+                        RSSD2HH.update(dict.fromkeys(maxHH_desc, maxHH))
+                        HH2RSSD[maxHH] = maxHH_desc
+                        [unassigned_nodes.discard(n) for n in maxHH_desc]
+                        del eachHHs_desc[maxHH]
+                        del HHsize[maxHH]
+                    if len(unassigned_nodes)>0:
+                        # Rogue nodes (no HH) are still left over...
+                        RSSD2HH.update(dict.fromkeys(unassigned_nodes, 0))
+                        HH2RSSD[0].union(unassigned_nodes)
 
-#def make_idmaps_CERT_HCR(config, asofdate, IDdata):
-#    """Scans the NIC and FDIC CB data for CERT-HCR mappings for the asofdate
-#    """
-#    LOG.info('Beginning mappings for asofdate='+str(asofdate))
-#    BankSys = IDdata[0]
-#    NICATTdf =  IDdata[1]
-#    FDICCBdf =  IDdata[2]
-#    asoffdic = int(UTIL.rcnt_qtrend(asofdate)/100)
-#    TRACE = ('TRUE'==config['csv2sys']['trace_logging'].upper())
-#    CERT2HCR = dict()
-#    HCR2CERT = dict()
-#    processed = set()
-#    NICATT_icol_ID_FDIC_CERT = NICATTdf.columns.get_loc('ID_FDIC_CERT')
-#    FDICCB_icol_RSSDHCR = FDICCBdf.columns.get_loc('RSSDHCR')
-#    SysU = BankSys.to_undirected()
-#    for E in BankSys:
-#        LOG.debug('Processing RSSD='+str(E)+', asofdate='+str(asofdate))
-#        if (E in processed):
-#            continue
-#        # Nodes in the graph component that contains entity E
-#        BHCnodes = nx.algorithms.components.node_connected_component(SysU, E)
-#        for rssd in BHCnodes:
-#            cert = -1
-#            try:
-#                cert = NICATTdf.loc[rssd].iat[NICATT_icol_ID_FDIC_CERT]
-#            except (KeyError) as ke:
-#                LOG.info('NIC lacks RSSD='+str(rssd)+
-#                         ', asofdate='+str(asofdate))
-#                LOG.info('Current progress: '+str(len(processed)))
-#            FDICCBrow = None
-#            if (cert > 0):
-#                try:
-#                    FDICCBrow = FDICCBdf.loc[(cert, asoffdic)]
-#                except (KeyError) as ke:
-#                    if (TRACE):
-#                        LOG.debug('Missing CERT='+str(cert)+' in FDIC CB '+
-#                          'for RSSD='+str(rssd)+' on asoffdic='+str(asoffdic))
-#            if not(FDICCBrow is None):
-#                hcr = FDICCBrow.iat[FDICCB_icol_RSSDHCR]
-#                CERT2HCR[cert] = hcr
-#                if (hcr > 0):
-#                    # Not every CERT has an official HCR
-#                    idmap_add(HCR2CERT, hcr, cert)
-#            processed.add(rssd)
-#    LOG.info('Completing mappings for asofdate='+str(asofdate)+
-#             ', processed='+str(len(processed)))
-#    return (CERT2HCR, HCR2CERT)
-
-
-#def make_idmaps_CERT_RSSD(config, asofdate, IDdata):
-#    """Scans the NIC data for CERT-RSSD mappings for the asofdate
-#
-#    Many RSSDs will not have a CERT, because the CERT only applies to 
-#    FDIC-insured depository institutions, and there are many other 
-#    uninsured entity types in the NIC. If no CERT is found, the entity
-#    is ignored by both the CERT2HCR and HCR2CERT mappings. 
-#    
-#    """
-#    LOG.info('Beginning mappings for asofdate='+str(asofdate))
-#    BankSys = IDdata[0]
-#    NICATTdf =  IDdata[1]
-#    FDICSoDdf =  IDdata[3]
-#    CERT2RSSD = dict()
-#    RSSD2CERT = dict()
-#    processed = set()
-#    SysU = BankSys.to_undirected()
-#    for E in BankSys:
-#        LOG.debug('Processing RSSD='+str(E)+', asofdate='+str(asofdate))
-#        if (E in processed):
-#            continue
-#        # Nodes in the graph component that contains entity E
-#        BHCnodes = nx.algorithms.components.node_connected_component(SysU, E)
-#        for rssd in BHCnodes:
-#            cert_found = False
-#            # First, check the NIC attributes to look up the RSSD and CERT
-#            dfQ = f'rssd=={rssd}'
-#            resultset = NICATTdf.query(dfQ)[['ID_FDIC_CERT', 'ID_RSSD']]
-#            for i in range(len(resultset)):
-#                cert = resultset.iat[i,0]
-#                if (cert > 0):
-#                    cert_found = True
-#                    continue
-#            if (len(resultset)>1):
-#                LOG.info(f'Multiple matches for RSSD={rssd} in NIC attributes')
-#            elif (len(resultset)<1):
-#                LOG.info(f'RSSD={rssd} not found in NIC attributes')
-#            # Fall back and try the FDIC SoD data
-#            if not(cert_found):
-#                dfQ = f'RSSDID=={rssd}'
-#                resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDID', 'RSSDHCR']]
-#                for i in range(len(resultset)):
-#                    cert = resultset.iat[i,0]
-#                    if (cert > 0):
-#                        cert_found = True
-#                        continue
-#            # CERT search is over, one way or the other
-#            if (cert_found):
-#                CERT2RSSD[cert] = rssd
-#                RSSD2CERT[rssd] = cert
-#            else:
-#                LOG.debug(f'No CERT found for RSSD={rssd}')
-#                RSSD2CERT[rssd] = 0
-#            processed.add(rssd)
-#    LOG.info(f'Completing {len(processed)} mappings for asofdate={asofdate}')
-#    return (CERT2RSSD, RSSD2CERT)                  
-
-#def make_idmaps_CERT_RSSD(config, asofdate, IDdata):
-#    """Scans the NIC data for CERT-RSSD mappings for the asofdate
-#    """
-#    LOG.info('Beginning mappings for asofdate='+str(asofdate))
-#    BankSys = IDdata[0]
-#    NICATTdf =  IDdata[1]
-#    CERT2RSSD = dict()
-#    RSSD2CERT = dict()
-#    processed = set()
-#    NICATT_icol_ID_FDIC_CERT = NICATTdf.columns.get_loc('ID_FDIC_CERT')
-#    BSU = BankSys.to_undirected()
-#    for E in BankSys:
-#        LOG.debug('Processing RSSD='+str(E)+', asofdate='+str(asofdate))
-#        if (E in processed):
-#            continue
-#        BHCnodes = nx.algorithms.components.node_connected_component(BSU, E)
-#        for rssd in BHCnodes:
-#            cert = -1
-#            try:
-#                cert = NICATTdf.loc[rssd].iat[NICATT_icol_ID_FDIC_CERT]
-##                cert = NICATTdf.loc[rssd]['ID_FDIC_CERT']
-#            except (KeyError) as ke:
-#                LOG.info('NIC lacks RSSD='+str(rssd)+
-#                         ', asofdate='+str(asofdate))
-#            if (cert > 0):
-#                CERT2RSSD[cert] = rssd
-#                RSSD2CERT[rssd] = cert
-#            else:
-#                RSSD2CERT[rssd] = 0
-#                LOG.debug('Missing CERT for RSSD='+str(rssd)+
-#                          ' in NIC attributes for asofdate='+str(asofdate))
-#            processed.add(rssd)
-#    LOG.info('Completing mappings for asofdate='+str(asofdate)+
-#             ', processed='+str(len(processed)))
-#    return (CERT2RSSD, RSSD2CERT)                  
-
-def make_idmaps_HCR_RSSD(config, asofdate, IDdata, RSSD2CERT, CERT2HCR):
-    """Builds mappings between RSSD IDs and the associated high holder IDs
-    """
-    LOG.info(f'Beginning mappings for asofdate={asofdate}')
-    BankSys = IDdata[0]
-#    asoffdic = int(UTIL.rcnt_qtrend(asofdate)/100)
-    trace_logging = ('TRUE'==config['csv2sys']['trace_logging'].upper())
-    RSSD2HCR = dict()
-    HCR2RSSD = dict()
-    processed = set()
-    SysU = BankSys.to_undirected()
-    BHC_trickyset = set()
-    for E in BankSys:
-        if (trace_logging):
-            LOG.debug(f'Processing RSSD={E}, asofdate={asofdate}')
-        LOG.debug(f'Processing RSSD={E}, asofdate={asofdate}')
-        if (E in processed):
-            continue
-        BHCnodes = nx.algorithms.components.node_connected_component(SysU, E)
-        BHC = BankSys.subgraph(BHCnodes)
-        # Begin with a triage, to set aside the tricky cases
-        HCRset = set()
-        for rssd in BHCnodes:
-            if not(0==RSSD2CERT[rssd]):
-                cert = RSSD2CERT[rssd]
-                if not(0==CERT2HCR[cert]):
-                    hcr = CERT2HCR[cert]
-                    HCRset.add(hcr)
-        if (0==len(HCRset)):
-            for rssd in BHCnodes:
-                RSSD2HCR[rssd] = 0
-                processed.add(rssd)
-        elif (1==len(HCRset)):
-            hcr = HCRset.pop()
-            (HH, case) = bhca.high_holder_impute(BHC)
-            if not(HH==hcr):
-                LOG.error(f'Mismatch between imputed HH ({HH}) vs HCR ({hcr})')
-            for rssd in BHCnodes:
-                RSSD2HCR[rssd] = hcr
-                idmap_add(HCR2RSSD, hcr, rssd)
-                processed.add(rssd)
-        else:
-            BHC_trickyset.add(BHC)
-    LOG.info(f'Processed {len(processed)} of {len(BankSys)} as simple cases')
-    LOG.info(f'There are {len(BHC_trickyset)} components in the tricky set')
-    for BHC in BHC_trickyset:
-        for E in BHC.nodes:
-            if (E in processed):
-                continue
-            rssd_anc = nx.algorithms.dag.ancestors(BHC, E)
-            HCRset = set()
-            for rssd in rssd_anc:
-                if not(0==RSSD2CERT[rssd]):
-                    cert = RSSD2CERT[rssd]
-                    if not(0==CERT2HCR[cert]):
-                        hcr = CERT2HCR[cert]
-                        HCRset.add(hcr)
-            if (0==len(HCRset)):
-                for rssd in rssd_anc:
+            # Handle the HCR calculations
+            thisHCRs = frozenset(allHCRs.intersection(comp))
+            if (len(thisHCRs)==0):
+                fname = f'anomaly_{asofdate}_noHCR_{hh}'
+                msg = f'No HCR for BHC with HH={hh}, as of {asofdate}. '
+                LOG.debug(msg + ' SVG output to: '+fname)
+            elif (len(thisHCRs)>1):
+                fname = f'anomaly_{asofdate}_multHCRs_{hh}'
+                msg = f'Multiple HCRs {set(thisHCRs)} for HH={hh},'+\
+                      f' as of {asofdate}. '
+                LOG.error(msg + ' SVG output to: '+fname)
+                log_error_svg(config, bhc, NICdata, fname, msg)
+                if not(hh in thisHCRs):
+                    fname = f'anomaly_{asofdate}_HHmismatchHCR_{hh}'
+                    msg = f'HH {hh} not in HCRs {set(thisHCRs)}, '+\
+                          f'as of {asofdate}. '
+                    LOG.error(msg + ' SVG output to: '+fname)
+                    log_error_svg(config, bhc, NICdata, fname, msg)
+            
+            if (1==len(comp)):
+                # Singleton component
+                rssd = next(iter(comp))
+                LOG.debug(f'Singleton node: {rssd}, as of {asofdate}')
+#                RSSD2HH[rssd] = rssd
+#                HH2RSSD[rssd] = comp
+                if (rssd in allHCRs):
+                    RSSD2HCR[rssd] = rssd
+                    HCR2RSSD[rssd] = comp
+                else:
                     RSSD2HCR[rssd] = 0
-                    processed.add(rssd)
-            elif (1==len(HCRset)):
-                hcr = HCRset.pop()
-                (HH, case) = bhca.high_holder_impute(BHC)
-                if not(HH==hcr):
-                    LOG.error(f'Mismatch between imputed HH ({HH}) vs HCR ({hcr})')
-                for rssd in rssd_anc:
-                    RSSD2HCR[rssd] = hcr
-                    idmap_add(HCR2RSSD, hcr, rssd)
-                    processed.add(rssd)
+                    HCR2RSSD[0].add(rssd)
+            elif (0==len(thisHCRs)):
+                # Multiple nodes, no HCR: assign all nodes in comp to HCR 0
+                RSSD2HCR.update(dict.fromkeys(comp, 0))
+                HCR2RSSD[0].union(comp)
+            elif (1==len(thisHCRs)):
+                # Unique HCR, find its descendants and assign them
+                hcr = next(iter(thisHCRs))
+                hcr_desc = bhca.reachable_nodes(bhc, hcr)
+                RSSD2HCR.update(dict.fromkeys(comp, 0))
+                RSSD2HCR.update(dict.fromkeys(hcr_desc, hcr))
+                HCR2RSSD[hcr] = hcr_desc
+                hcr_complement = comp.difference(hcr_desc)
+                if not(0==len(hcr_complement)):
+                    fname = f'anomaly_{asofdate}_noHCRancestor_{hh}'
+                    msg= f'Node(s) {hcr_complement} are unreachable from '+\
+                         f'HCR {hcr}, as of {asofdate}. '
+                    LOG.error(msg + ' SVG output to: '+fname)
+                    log_error_svg(config, bhc, NICdata, fname, msg)
+                    HCR2RSSD[0].union(hcr_complement)
             else:
-                LOG.error(f'Ambiguous HCR: {HCRset} for RSSD={rssd}')
-                hcr = HCRset.pop()
-                (HH, case) = bhca.high_holder_impute(BHC)
-                if not(HH==hcr):
-                    LOG.error(f'Mismatch between imputed HH ({HH}) vs HCR ({hcr})')
-                for rssd in rssd_anc:
-                    RSSD2HCR[rssd] = hcr
-                    idmap_add(HCR2RSSD, hcr, rssd)
-                    processed.add(rssd)
-    LOG.info(f'Completing {len(processed)} mappings for asofdate={asofdate}')
-    return (RSSD2HCR, HCR2RSSD)
-
-#def make_idmaps_HCR_RSSD(config, asofdate, IDdata):
-#    LOG.info('Beginning mappings for asofdate='+str(asofdate))
-#    BankSys = IDdata[0]
-#    NICATTdf =  IDdata[1]
-#    FDICCBdf =  IDdata[2]
-#    asoffdic = int(UTIL.rcnt_qtrend(asofdate)/100)
-#    TRACE = ('TRUE'==config['csv2sys']['trace_logging'].upper())
-#    RSSD2HCR = dict()
-#    HCR2RSSD = dict()
-#    processed = set()
-#    BSU = BankSys.to_undirected()
-#    for E in BankSys:
-#        LOG.debug('Processing RSSD='+str(E)+', asofdate='+str(asofdate))
-#        if (E in processed):
-#            continue
-#        BHCnodes = nx.algorithms.components.node_connected_component(BSU, E)
-#        BHC = BankSys.subgraph(BHCnodes)
-#        for rssd in BHCnodes:
-#            climb_tree = True
-#            hcr_found = False
-#            context = rssd
-#            while (climb_tree and not(hcr_found)):
-#                # Inspect the context node for an HCR match ...
-#                try:
-#                    hcr = RSSD2HCR[context]
-#                    RSSD2HCR[rssd] = hcr
-#                    idmap_add(HCR2RSSD, hcr, rssd)
-#                    hcr_found = True
-#                    continue
-#                except (KeyError) as ke:
-#                    pass
-#                # No existing match for context node, map instead from NIC/FDIC
-#                ctx_cert = -1
-#                FDICCBrow = None
-#                try:
-#                    ctx_cert = NICATTdf.loc[context]['ID_FDIC_CERT']
-#                except (KeyError) as ke:
-#                    LOG.info('NIC lacks RSSD='+str(context)+
-#                             ', asofdate='+str(asofdate))
-#                if (ctx_cert > 0):
-#                    try:
-#                        FDICCBrow = FDICCBdf.loc[(ctx_cert, asoffdic)]
-#                    except (KeyError) as ke:
-#                        if (TRACE):
-#                          LOG.debug('FDIC CB lacks CERT='+str(ctx_cert)+
-#                                    'for RSSD='+str(context)+
-#                                    ' on asoffdic='+str(asoffdic))
-#                if (FDICCBrow is not None):
-#                    # We have an FDIC match for the context node
-#                    hcr = FDICCBrow['RSSDHCR']
-#                    if (hcr > 0):
-#                        RSSD2HCR[context] = hcr
-#                        RSSD2HCR[rssd] = hcr
-#                        idmap_add(HCR2RSSD, hcr, context)
-#                        idmap_add(HCR2RSSD, hcr, rssd)
-#                        processed.add(context)
-#                        hcr_found = True
-#                        continue
-#                # Still no match; climb the hierarchy and try the parent
-#                parentage = BHC.in_edges(context)
-#                if (0==len(parentage)):
-#                    # Top of the house, nowhere to go
-#                    climb_tree = False
-#                elif (1==len(parentage)):
-#                    context = list(parentage)[0][0]
-#                else:
-#                    # Ambiguous parentage
-#                    climb_tree = False
-#            processed.add(rssd)
-#    LOG.info('Completing mappings for asofdate='+str(asofdate)+
-#             ', processed='+str(len(processed)))
-#    return (RSSD2HCR, HCR2RSSD)
-#
-def make_idmaps_HH_RSSD(config, asofdate, IDdata):
-    LOG.info(f'Beginning mappings for asofdate={asofdate}')
-    trace_logging = ('TRUE'==config['csv2sys']['trace_logging'].upper())
-    BankSys = IDdata[0]
-    # Maps from NIC RSSDs to imputed high-holder RSSDs, and vice versa
-    RSSD2HH = dict()
-    HH2RSSD = dict()
-    processed = set()
-    SysU = BankSys.to_undirected()
-    for E in BankSys:
-        if (trace_logging):
-            LOG.debug(f'Processing RSSD={E}, asofdate={asofdate}')
-        if (E in processed):
-            continue
-        BHCnodes = nx.algorithms.components.node_connected_component(SysU,E)
-        BHC = BankSys.subgraph(BHCnodes)
-        (BHCs, JVs) = bhca.high_holder_partition(BHC)
-        for hc in BHCs.keys():
-            # These are the BHC subgraphs with unambiguous high holder
-            for ent in BHCs[hc].nodes:
-                RSSD2HH[ent] = hc
-                idmap_add(HH2RSSD, hc, ent)
-                processed.add(ent)
-        for jvk in JVs.keys():
-            # These are the joint ventures, where the high holder is ambiguous
-            max_hh_size = -1
-            max_hh = None
-            for i in range(len(jvk)):
-                hh = jvk[i]
-                bhc = BHCs[hh]
-                if (len(bhc) > max_hh_size):
-                    max_hh_size = len(bhc)
-                    max_hh = hh
-            for ent in JVs[jvk][0][0].nodes:
-                RSSD2HH[ent] = max_hh 
-                idmap_add(HH2RSSD, max_hh, ent)
-                processed.add(ent)
-    LOG.info(f'Completing {len(processed)} mappings for asofdate={asofdate}')
-    return (RSSD2HH, HH2RSSD)
-
-    
-def idmap_add(idmap, key, val):
-    """Adds value to the set (creating it, if needed) for the key in the idmap
-    
-    Examples
-    --------
-    >>> newmap = dict()
-    >>> idmap_add(newmap, 1234, 9876)
-    >>> sorted(newmap[1234])
-    [9876]
-    
-    >>> idmap_add(newmap, 1234, 7654)
-    >>> sorted(newmap[1234])
-    [7654, 9876]
-    """
-    valset = None
-    try:
-        valset = idmap[key]
-    except (KeyError) as ke:
-        valset = set()
-        idmap[key] = valset
-    valset.add(val)
+                # Multiple HCRs - we need to know how they interact
+                thisHCRs_desc = set()
+                eachHCRs_desc = dict()
+                for hcr in thisHCRs:
+                    eachHCRs_desc[hcr] = bhca.reachable_nodes(bhc, hcr)
+                    thisHCRs_desc.union(eachHCRs_desc[hcr])
+                hcrnx = nx.DiGraph()
+                for hcr in thisHCRs:
+                    # Build a little digraph of only the HCRs in this component
+                    hcr_desc = eachHCRs_desc[hcr].copy()
+                    hcr_desc.remove(hcr)
+                    hcr_subs = hcr_desc.intersection(thisHCRs)
+                    hcr_rels = [(hcr,subhcr) for subhcr in hcr_subs]
+                    hcrnx.add_edges_from(hcr_rels)
+                    # Check the digraph for (messy) HCR cycles
+                    hcrcycs = nx.algorithms.cycles.simple_cycles(hcrnx)
+                    hcrcyclist = [c for c in hcrcycs]
+                    if (len(hcrcyclist) > 0):
+                        # TODO: If this ever occurs, we NEED a response
+                        fname = f'anomaly_{asofdate}_HCRcycles_{hcr}'
+                        msg= f'HCR {hcr} in mutual (HCR) ownership '+\
+                             f'cycle(s) {hcrcyclist}, as of {asofdate}. '
+                        LOG.error(msg + ' SVG output to: '+fname)
+                        log_error_svg(config, bhc, NICdata, fname, msg)
+                    # Work bottem up through hcrnx, assigning HCRs
+#                    assigned = set()
+                    while (hcrnx.number_of_nodes()>0):
+                        outdegs = dict(hcrnx.out_degree())
+                        OUT0 = set([n for n,d in outdegs.items() if 0==d])
+                        for leaf in OUT0:
+                            leaf_desc = eachHCRs_desc[leaf].copy()
+                            RSSD2HCR.update(dict.fromkeys(leaf_desc, 0))
+                            HCR2RSSD[leaf] = leaf_desc
+#                            assigned = assigned.union(leaf_desc)
+                            hcrnx.remove_node(leaf)
+        LOG.info(f'PROFILE {UTIL.toc()} secs. RSSD2HCR {asofdate}')
+        # Check whether we mis-assigned a bank
+        RSSD2CERT_valid = {k:v for k,v in RSSD2CERT.items() if (v>0)}
+        missing_certs = {v for v in RSSD2CERT_valid.values() if v not in CERT2HCR.keys()}
+        CERT2HCR.update(dict.fromkeys(missing_certs, -1))
+        LOG.info(f'Filtered RSSD2CERT mapping has {len(RSSD2CERT_valid)} elements')
+        certs_mismatched = {k:v for k,v in RSSD2CERT_valid.items() if RSSD2HCR[k] != CERT2HCR[v]}
+        LOG.info(f'PROFILE {UTIL.toc()} secs. HERE!! {len(certs_mismatched)} for {asofdate}')
+        for rssd in certs_mismatched.keys():
+            cert = certs_mismatched[rssd]
+            try:
+                hcr_mapped = RSSD2HCR[rssd]
+                hcr_official = CERT2HCR[cert]
+                comp = nx.algorithms.components.node_connected_component(BankSysU, rssd)
+                bhc = BankSys.subgraph(comp)
+                HCRid = hcr_mapped
+                if (HCRid<=0):
+                    HCRid = hcr_official
+                if (HCRid<=0):
+                    HCRid = f'T{int(UTIL.currtime())}'
+                fname = f'anomaly_{asofdate}_HCRassgn_{HCRid}'
+                msg= f'HCR misassigned for CERT={cert} and '+\
+                     f'RSSD={rssd}, (HCR mapped={hcr_mapped} vs '+\
+                     f'official={hcr_official}) as of {asofdate}. '
+                LOG.error(msg + ' SVG output to: '+fname)
+#                log_error_svg(config, bhc, NICdata, fname, msg)
+            except KeyError as ke:
+                comp = nx.algorithms.components.node_connected_component(BankSysU, rssd)
+                bhc = BankSys.subgraph(comp)
+                fname = f'anomaly_{asofdate}_CERTlack_{cert}'
+                msg= f'CERT={cert} in NIC (for RSSD={rssd}) missing '+\
+                     f'from FDIC SoD (HCR mapped={hcr_mapped}), '+\
+                     f'as of {asofdate}. '
+                LOG.error(msg + ' SVG output to: '+fname)
+#                log_error_svg(config, bhc, NICdata, fname, msg)
+#        LOG.info(f'CERT check reveals {hcrs_agree} agree '+\
+#                 f'and {hcrs_disagree} disagree')
+        LOG.info(f'PROFILE {UTIL.toc()} secs. checking CERT-HCRs {asofdate}')
+                        
             
 
+#def foobar():
+#    # Fall back and try the FDIC SoD data
+#    if not(cert_found):
+#        dfQ = f'RSSDID=={rssd}'
+#        resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDID', 'RSSDHCR']]
+#        if len(resultset)>0:
+#            cert = resultset.iat[0,0]
+#            cert_found = True
+#            if len(resultset)>1:
+#                multcerts = set()
+#                for i in range(len(resultset)):
+#                    multcerts.add(resultset.iat[i,0])
+#                if len(multcerts) > 0:
+#                    msg = f'Multiple CERTs {multcerts} for RSSD={rssd} in FDIC SoD, as of {asofdate}'
+#                    LOG.error(msg)
+#                    BHC = BankSys.subgraph(BHCnodes)
+#                    cert0 = sorted(multcerts)[0]
+#                    filename = f'anomaly_ALY_{asofdate}_multCERTs_SoD_{cert0}'
+#                    log_error_svg(config, BHC, NICdata, filename, msg)
+##                for i in range(len(resultset)):
+##                    cert = resultset.iat[i,0]
+##                    if (cert > 0):
+##                        cert_found = True
+##                        continue
+#    # CERT search is over, one way or the other
+#    if not(cert_found):
+#        if (trace_logging):
+#            LOG.debug(f'No CERT found for RSSD={rssd}')
+#    else:
+#        # We have a CERT, now look for the matching HCR
+#        dfQ = f'cert=={cert} and RSSDHCR>0'
+#        resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDID', 'RSSDHCR']]
+#        if len(resultset)>0:
+#            hcr = resultset.iat[0,2]
+#            hcr_found = True
+#            if len(resultset)>1:
+#                multhcrs = set()
+#                for i in range(len(resultset)):
+#                    multhcrs.add(resultset.iat[i,2])
+#                if len(multhcrs) > 0:
+#                    msg = f'Multiple HCRs {multhcrs} for RSSD={rssd} in FDIC SoD, as of {asofdate}'
+#                    LOG.error(msg)
+#                    BHC = BankSys.subgraph(BHCnodes)
+#                    hcr0 = sorted(multhcrs)[0]
+#                    filename = f'anomaly_ALY_{asofdate}_multHCRs_SoD_{hcr0}'
+#                    log_error_svg(config, BHC, NICdata, filename, msg)
+##                for i in range(len(resultset)):
+##                    hcr = resultset.iat[i,2]
+##                    if (hcr > 0):
+##                        hcr_found = True
+##                        hcrset.add(hcr)
+##                        continue
+#        if not(hcr_found):
+#            # Last place to look for HCR is in the FDIC CB data
+#            dfQ = f'cert=={cert} and RSSDHCR>0'
+#            resultset = FDICCBdf.query(dfQ)[['CERT', 'RSSDHCR']]
+#            for i in range(len(resultset)):
+#                hcr = resultset.iat[i,1]
+#                if (hcr > 0):
+#                    hcr_found = True
+#                    hcrset.add(hcr)
+#                    LOG.debug(f'HCR={hcr} for {rssd} found in CB data')
+#                    continue
+#
 
+        
+
+def log_error_svg(config, BHC, NICdata, filename, msg):
+    imagelogdir = config['DEFAULT']['imagelogdir']
+    colormap = eval(config['bhc2out']['colormap'])
+    extraattributes = eval(config['csv2sys']['extraattributes'])
+    add_attributes(BHC, NICdata, attlist=extraattributes)
+    DATA.log_bhc_svg(BHC, imagelogdir, filename, colormap, msg)
+
+    
+    
 def build_idmaps(config):
     """Builds six maps among regulatory identifiers for each quarterly asofdate
     
@@ -863,6 +607,58 @@ def build_idmaps(config):
     
 
 
+def add_attributes(BHC, NICdata, attlist=None):
+    """# Decorates a BHC graph with certain important attibutes
+    
+    For each node in the BHC, looks up a number of important attributes 
+    from the attributes dataframe (in DATA), and attaches them to the node. 
+    
+    Parameters
+    ----------
+    BHC : NetworkX DiGraph 
+        The bank holding company object to decorate
+    NICdata : DataFrame
+        A list of key information resources, as assembled by ATTcsv2df()
+    attlist : list
+        A list of attributes to include from NICdata
+    derive_geo : bool
+        Whether to derive the 
+        
+    Returns
+    -------
+    The decorated BHC graph is returned.
+
+    """
+    ATTdf = NICdata[DATA.IDX_Attributes]
+#    RELdf = NICdata[DATA.IDX_Relationships]
+    if (attlist is None):
+        attlist = ['NICsource', 'ENTITY_TYPE', 'CNTRY_NM', 'STATE_ABBR_NM',]
+    for node in BHC.nodes():
+#        node_id = 
+        try:
+            ent = ATTdf.query(f'rssd=={int(node)}').iloc[0]
+            node_dict = dict()
+#            ent = ATTdf.loc[node_id]
+            node_dict = {
+            'nicsource': ent['NICsource'],
+            'entity_type': ent['ENTITY_TYPE'],
+            'GEO_JURISD': ent['CNTRY_NM'].strip() +' - '+ ent['STATE_ABBR_NM'],
+            }
+            # Now add the extra params requested in the config file
+#            extras = eval(config['sys2bhc']['extraattributes'])
+            for x in attlist:
+                node_dict[x.lower()] = ent[x]
+        except:
+            node_dict = {
+            'nicsource': 'XXX',
+            'entity_type': 'XXX',
+            'GEO_JURISD': 'XXX'
+            }
+        nx.set_node_attributes(BHC, {node: node_dict})
+    return BHC
+
+
+
 def main(argv=None):
     """A main function for command line execution
     
@@ -876,14 +672,16 @@ def main(argv=None):
     argv : dict
         The collection of arguments submitted on the command line
     """
+    starttime = UTIL.currtime()
     config = UTIL.parse_command_line(argv, __file__)
     try:
         build_sys(config)
-#        build_hhdata(config)
         build_idmaps(config)
     except Exception as e:
         logging.exception("message")
     LOG.info('**** Processing complete ****')
+    delta = UTIL.currtime() - starttime
+    LOG.info(f'PROFILE total time: {delta} seconds (or {delta/60.0} minutes)')
     
 # This tests whether the module is being run from the command line
 if __name__ == "__main__":

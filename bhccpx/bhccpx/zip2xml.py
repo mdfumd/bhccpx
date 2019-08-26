@@ -29,6 +29,7 @@ import zipfile as zf
 import progressbar as pb
 
 import bhc_util as UTIL
+import bhc_data as DATA
 
 LOG = UTIL.log_config(__file__.split(os.path.sep)[-1].split('.')[0])
 
@@ -67,7 +68,7 @@ def unzip_data(config):
 def unzip_data_nic(config):
     """Unzips the NIC files, as specified in the configuration
     """
-    tgtdir = UTIL.resolve_dir_nic(config['zip2xml']['nic_dir'], 
+    tgtdir = DATA.resolve_dir_nic(config['zip2xml']['nic_dir'], 
       config['zip2xml']['nic_subdir'])
     nic_format = config['zip2xml']['nic_format'].upper()
     pbar = ('TRUE'==config['DEFAULT']['progressbars'].upper())
@@ -128,32 +129,33 @@ def unzip_data_fdicsod(config):
     """Unzips the FDIC SoD files, as specified in the configuration
     """
     tgtdir = config['zip2xml']['fdicsod_dir']
-    zipfiles = [
-        config['zip2xml']['fdicsod_csvtgt_2018'],
-        config['zip2xml']['fdicsod_csvtgt_2017'],
-        config['zip2xml']['fdicsod_csvtgt_2016'],
-        config['zip2xml']['fdicsod_csvtgt_2015'],
-        config['zip2xml']['fdicsod_csvtgt_2014'],
-        config['zip2xml']['fdicsod_csvtgt_2013'],
-        config['zip2xml']['fdicsod_csvtgt_2012'],
-        config['zip2xml']['fdicsod_csvtgt_2011'],
-        config['zip2xml']['fdicsod_csvtgt_2010'],
-        config['zip2xml']['fdicsod_csvtgt_2009'],
-        config['zip2xml']['fdicsod_csvtgt_2008'],
-        config['zip2xml']['fdicsod_csvtgt_2007'],
-        config['zip2xml']['fdicsod_csvtgt_2006'],
-        config['zip2xml']['fdicsod_csvtgt_2005'],
-        config['zip2xml']['fdicsod_csvtgt_2004'],
-        config['zip2xml']['fdicsod_csvtgt_2003'],
-        config['zip2xml']['fdicsod_csvtgt_2002'],
-        config['zip2xml']['fdicsod_csvtgt_2001'],
-        config['zip2xml']['fdicsod_csvtgt_2000'],
-        config['zip2xml']['fdicsod_csvtgt_1999'],
-        config['zip2xml']['fdicsod_csvtgt_1998'],
-        config['zip2xml']['fdicsod_csvtgt_1997'],
-        config['zip2xml']['fdicsod_csvtgt_1996'],
-        config['zip2xml']['fdicsod_csvtgt_1995'],
-        config['zip2xml']['fdicsod_csvtgt_1994'] ]
+    zipfiles = eval(config['zip2xml']['fdicsod_ziptgt_filelist'])
+#    zipfiles = [
+#        config['zip2xml']['fdicsod_csvtgt_2018'],
+#        config['zip2xml']['fdicsod_csvtgt_2017'],
+#        config['zip2xml']['fdicsod_csvtgt_2016'],
+#        config['zip2xml']['fdicsod_csvtgt_2015'],
+#        config['zip2xml']['fdicsod_csvtgt_2014'],
+#        config['zip2xml']['fdicsod_csvtgt_2013'],
+#        config['zip2xml']['fdicsod_csvtgt_2012'],
+#        config['zip2xml']['fdicsod_csvtgt_2011'],
+#        config['zip2xml']['fdicsod_csvtgt_2010'],
+#        config['zip2xml']['fdicsod_csvtgt_2009'],
+#        config['zip2xml']['fdicsod_csvtgt_2008'],
+#        config['zip2xml']['fdicsod_csvtgt_2007'],
+#        config['zip2xml']['fdicsod_csvtgt_2006'],
+#        config['zip2xml']['fdicsod_csvtgt_2005'],
+#        config['zip2xml']['fdicsod_csvtgt_2004'],
+#        config['zip2xml']['fdicsod_csvtgt_2003'],
+#        config['zip2xml']['fdicsod_csvtgt_2002'],
+#        config['zip2xml']['fdicsod_csvtgt_2001'],
+#        config['zip2xml']['fdicsod_csvtgt_2000'],
+#        config['zip2xml']['fdicsod_csvtgt_1999'],
+#        config['zip2xml']['fdicsod_csvtgt_1998'],
+#        config['zip2xml']['fdicsod_csvtgt_1997'],
+#        config['zip2xml']['fdicsod_csvtgt_1996'],
+#        config['zip2xml']['fdicsod_csvtgt_1995'],
+#        config['zip2xml']['fdicsod_csvtgt_1994'] ]
     force = ('TRUE'==config['zip2xml']['force'].upper())
     pbar = ('TRUE'==config['DEFAULT']['progressbars'].upper())
     unzip_filelist(tgtdir, zipfiles, force, pbar)
@@ -184,13 +186,13 @@ def scrub_headers_nic(tgtdir, pbar, normfiles):
             normf = normfiles[i]
             normfilepath = os.path.join(tgtdir, normf)
             LOG.debug('Scrubbing header row: '+normfilepath)
-            UTIL.sed(normfilepath, '#', '', N=1)
+            DATA.sed(normfilepath, '#', '', N=1)
     else:
         for i in range(len(normfiles)):
             normf = normfiles[i]
             normfilepath = os.path.join(tgtdir, normf)
             LOG.debug('Scrubbing header row: '+normfilepath)
-            UTIL.sed(normfilepath, '#', '', N=1)
+            DATA.sed(normfilepath, '#', '', N=1)
 
 
 
@@ -217,7 +219,8 @@ def unzip_filelist(tgtdir, zipfiles, force, pbar, normfiles=None):
             zipf = zipfiles[i]
             zipfilepath = os.path.join(tgtdir, zipf)
             zipfile = zf.ZipFile(zipfilepath, 'r')
-            tgtfilename = zipfile.namelist()[0]
+            # Sort names, because each FDIC SoD zip has multiple files
+            tgtfilename = sorted(zipfile.namelist())[0]
             tgtfilepath = os.path.join(tgtdir, tgtfilename)
             if not(None==normfiles):
                 nrmfilepath = os.path.join(tgtdir, normfiles[i])
@@ -242,7 +245,8 @@ def unzip_filelist(tgtdir, zipfiles, force, pbar, normfiles=None):
             zipf = zipfiles[i]
             zipfilepath = os.path.join(tgtdir, zipf)
             zipfile = zf.ZipFile(zipfilepath, 'r')
-            tgtfilename = zipfile.namelist()[0]
+            # Sort names, because each FDIC SoD zip has multiple files
+            tgtfilename = sorted(zipfile.namelist())[0]
             tgtfilepath = os.path.join(tgtdir, tgtfilename)
             if not(None==normfiles):
                 nrmfilepath = os.path.join(tgtdir, normfiles[i])
