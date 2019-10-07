@@ -20,24 +20,160 @@
 # Copyright 2019, Mark D. Flood
 #
 # Author: Mark D. Flood
-# Last revision: 22-Jun-2019
+# Last revision: 5-Sep-2019
 # -----------------------------------------------------------------------------
 
 import re
 
 import networkx as nx
 
+
+# Constants for quotient types
 Q_FULL = 1
 Q_HETERO = 2
 Q_FULL_COND = 3
 Q_HETERO_COND = 4
 
+# String constants for metric names
+M_BVct = 'Bas_Vertex_count'
+M_BEct = 'Bas_Edge_count'
+M_BCrk = 'Bas_Cycle_rank'
+M_BCmp = 'Bas_Num_CComp'
+M_EQfxB = 'Ent_Qfull_B1'
+M_EQhxB = 'Ent_Qhetr_B1'
+M_EQfcB = 'Ent_Qfcon_B1'
+M_EQhcB = 'Ent_Qhcon_B1'
+M_EQecB = 'Ent_edgcn_B1'
+M_EDHmB = 'Ent_DjHom_B1'
+M_EDHmM = 'Ent_DjHom_M'
+M_ENlbl = 'Ent_Nlabl'
+M_GQfxB = 'Geo_Qfull_B1'
+M_GQhxB = 'Geo_Qhetr_B1'
+M_GQfcB = 'Geo_Qfcon_B1'
+M_GQhcB = 'Geo_Qhcon_B1'
+M_GQecB = 'Geo_edgcn_B1'
+M_GDHmB = 'Geo_DjHom_B1'
+M_GDHmM = 'Geo_DjHom_M'
+M_GNlbl = 'Geo_Nlabl'
 
-class BHCanalyzeError(RuntimeError):
-    def __init__(self, msg):
-        self.msg = msg
+def complexity_workup(BHC):
+    """Calculates a standard set of complexity metrics for a BHC
+    
+    Most of the metrics involve quotienting the nodes of the BHC graph.
+    The nodes are quotiented by entity type and (separately) geographic
+    juridiction. 
+    
+    The following metrics are calculated:
         
+    A. Basic metrics
+    
+      * Bas_Vertex_count = Number of nodes, original BHC graph 
+      * Bas_Edge_count   = Number of edges, BHC graph 
+      * Bas_Cycle_rank   = Cycle rank (b1), BHC graph 
+      * Bas_Num_CComp    = Number of connected components (b0), BHC graph
+      
+    B. Entity quotients
+    
+      * Ent_Qfull_B1     = Cycle rank, full entity quotient
+      * Ent_Qhetr_B1     = Cycle rank, heterogeneous entity quotient
+      * Ent_Qfcon_B1     = Cycle rank, condensed entity quotient
+      * Ent_Qhcon_B1     = Cycle rank, heterogeneous condensed entity quotient
+      * Ent_edgcn_B1 = 'Ent_edgcn_B1'
+      * Ent_DjHom_B1 = 'Ent_DjHom_B1'
+      * Ent_DjHom_M = 'Ent_DjHom_M'
+      * Ent_Nlabl = 'Ent_Nlabl'
+      
+    B. Beography quotients
+    
+      * Geo_Qfull_B1 = 'Geo_Qfull_B1'
+      * Geo_Qhetr_B1 = 'Geo_Qhetr_B1'
+      * Geo_Qfcon_B1 = 'Geo_Qfcon_B1'
+      * Geo_Qhcon_B1 = 'Geo_Qhcon_B1'
+      * Geo_edgcn_B1 = 'Geo_edgcn_B1'
+      * Geo_DjHom_B1 = 'Geo_DjHom_B1'
+      * Geo_DjHom_M = 'Geo_DjHom_M'
+      * Geo_Nlabl = 'Geo_Nlabl'
+
+    Parameters
+    ----------
+    BHC : networkx.DiGraph
+        A directed graph representing a bank holding company
+    
+    Returns
+    -------
+    int
+        Components in the projection of BHC to a simple undirected graph
         
+
+    """
+    
+    metrics = dict()
+    # Basic metrics, using the key constants defined above
+    metrics[M_BVct] = BHC.number_of_nodes()
+    metrics[M_BEct] = edge_count(BHC)
+    metrics[M_BCrk] = cycle_rank(BHC)
+    metrics[M_BCmp] = number_of_components(BHC)
+    # Quotiented by entity type
+    dimen = 'entity_type'
+    QEF = get_quotient(BHC, dimen, Q_FULL)
+    QEH = get_quotient(BHC, dimen, Q_HETERO)
+    QEFC = get_quotient(BHC, dimen, Q_FULL_COND)
+    QEHC = get_quotient(BHC, dimen, Q_HETERO_COND)
+    CE = get_contraction(BHC, dimen).to_undirected()
+    DMHE = get_disjoint_maximal_homogeneous_subgraphs(BHC, dimen)
+    metrics[M_EQfxB] = cycle_rank(QEF)
+    metrics[M_EQhxB] = cycle_rank(QEH)
+    metrics[M_EQfcB] = cycle_rank(QEFC)
+    metrics[M_EQhcB] = cycle_rank(QEHC)
+    metrics[M_EQecB] = cycle_rank(CE)
+    metrics[M_EDHmB] = cycle_rank(DMHE)
+    metrics[M_EDHmM] = number_of_components(DMHE)
+    metrics[M_ENlbl] = len(get_labels(BHC, dimen))
+    # Quotiented by geographic jurisdiction
+    dimen = 'GEO_JURISD'
+    QGF = get_quotient(BHC, dimen, Q_FULL)
+    QGH = get_quotient(BHC, dimen, Q_HETERO)
+    QGFC = get_quotient(BHC, dimen, Q_FULL_COND)
+    QGHC = get_quotient(BHC, dimen, Q_HETERO_COND)
+    CG = get_contraction(BHC, dimen).to_undirected()
+    DMHG = get_disjoint_maximal_homogeneous_subgraphs(BHC, dimen)
+    metrics[M_GQfxB] = cycle_rank(QGF)
+    metrics[M_GQhxB] = cycle_rank(QGH)
+    metrics[M_GQfcB] = cycle_rank(QGFC)
+    metrics[M_GQhcB] = cycle_rank(QGHC)
+    metrics[M_GQecB] = cycle_rank(CG)
+    metrics[M_GDHmB] = cycle_rank(DMHG)
+    metrics[M_GDHmM] = number_of_components(DMHG)
+    metrics[M_GNlbl] = len(get_labels(BHC, dimen))
+    return metrics
+
+
+## Calculates a full set of complexity metrics for a BHC, quotienting by
+## both entity type and geographic jurisdiction, and returns them as a dict.
+#def test_metrics(metrics, context):
+#    # Ensure that the BHC is a single connected component
+#    if (1 != metrics[M_BCmp]):
+#        LOG.error(f'BHC is not completely connected. {M_BCmp}: {metrics[M_BCmp]}, Context: {context}')
+#    # Confirm that Equation 3 (Euler-Poincare) holds
+#    if (metrics[M_BCrk] != metrics[M_BEct] - metrics[M_BVct] + metrics[M_BCmp]):
+#        LOG.error(f'Euler-Poincare fails. {M_BCrk}: {metrics[M_BCrk]}, {M_BEct}: {metrics[M_BEct]}, {M_BVct}: {metrics[M_BVct]}, {M_BCmp}: {metrics[M_BCmp]}, Context: {context}')
+#
+#    # Confirm that Theorem 3.2 Equation 6 (NBER version) holds -- entity type
+#    if (metrics[M_EQfxB] != metrics[M_BCrk] + metrics[M_BVct] - metrics[M_ENlbl]):
+#        LOG.error(f'Theorem 3.2 fails. {M_EQfxB}: {metrics[M_EQfxB]}, {M_BCrk}: {metrics[M_BCrk]}, {M_BVct}: {metrics[M_BVct]}, {M_ENlbl}: {metrics[M_ENlbl]}, Context: {context}')
+#    # Confirm that Corollary 3.4 (NBER version) holds -- entity type
+#    if (metrics[M_EQhxB] != metrics[M_EDHmM] - metrics[M_ENlbl] + metrics[M_BCrk] - metrics[M_EDHmB]):
+#        LOG.error(f'Corollary 3.4 fails. {M_EQhxB}: {metrics[M_EQhxB]}, {M_EDHmM}: {metrics[M_EDHmM]}, {M_ENlbl}: {metrics[M_ENlbl]}, {M_BCrk}: {metrics[M_BCrk]}, {M_EDHmB}: {metrics[M_EDHmB]}, Context: {context}')
+#
+#    # Confirm that Theorem 3.2 Equation 6 (NBER version) holds -- geography
+#    if (metrics[M_GQfxB] != metrics[M_BCrk] + metrics[M_BVct] - metrics[M_GNlbl]):
+#        LOG.error(f'Theorem 3.2 fails (Geographic quotient). {M_GQfxB}: {metrics[M_GQfxB]}, {M_BCrk}: {metrics[M_BCrk]}, {M_BVct}: {metrics[M_BVct]}, {M_GNlbl}: {metrics[M_GNlbl]}, Context: {context}')
+#    # Confirm that Corollary 3.4 (NBER version) holds -- geography
+#    if (metrics[M_GQhxB] != metrics[M_GDHmM] - metrics[M_GNlbl] + metrics[M_BCrk] - metrics[M_GDHmB]):
+#        LOG.error(f'Corollary 3.4 fails (Geographic quotient). {M_GQhxB}: {metrics[M_GQhxB]}, {M_GDHmM}: {metrics[M_GDHmM]}, {M_GNlbl}: {metrics[M_GNlbl]}, {M_BCrk}: {metrics[M_BCrk]}, {M_GDHmB}: {metrics[M_GDHmB]}, Context: {context}')
+
+
+
 def get_labels(BHC, dimen, missings=dict()):
     """Gets all possible node labels associated with the attibute key (dimen)
     
@@ -784,8 +920,10 @@ def containing_component(BankSys, rssd):
     [30]
     
     """
-    reachable = set()
-    return reachable
+    BankSysU = BankSys.to_undirected()
+    compo = nx.algorithms.components.node_connected_component(BankSysU, rssd)
+    BHCcompo = BankSys.subgraph(compo)
+    return BHCcompo
             
         
     
@@ -916,8 +1054,7 @@ def high_holder_partition(BHC_graph):
     """
     # The input needs to be a single connected component
     if not(1==len([nx.connected_components(BHC_graph.to_undirected())])):
-        raise ValueError('Cannot process multiple components in BHC_graph: '+
-                         str(BHC_graph.nodes))
+        raise ValueError(f'Too many (>1) components: {BHC_graph.nodes}')
     # Only nodes with indegree==0 (the IN0 set) can possibly be high holders
     # The indegree counts for every node in BHC
     indegrees = dict(BHC_graph.in_degree())
@@ -957,7 +1094,7 @@ def high_holder_partition(BHC_graph):
             JV_nodes[owners].add(ent)
         else:
             # This really should never occur; something strange is going on
-            raise BHCanalyzeError('No owner found for entity: '+str(ent))
+            raise BHCanalyzeError(f'No owner found for entity: {ent}')
     # Build a dictionary of the standalone BHC components (excluding the JVs)
     BHCs = dict()
     for in0 in BHC0_nodes:
@@ -978,6 +1115,65 @@ def high_holder_partition(BHC_graph):
             jvs.append((jv, jv_bridges))
         JVs[jvk] = jvs
     return (BHCs, JVs, rogues)
+
+
+
+def edge_persistence_seq(BHC_graph, attr_name, attr_vals, comparator='LT'):
+    """Filters a BHC into a nested sequence of graphs based on edge attributes 
+    
+    Parameters
+    ----------
+    BHC_graph : networkx.DiGraph
+        A single connected component that may contain multiple high holders
+        and one or more joint ventures
+    attr_name : str
+        Name of an edge attribute for the filtration
+    attr_vals : list
+        Ordered collection of edge attribute categories for the filtration.
+        The list should be sorted in descending order of removal priority;
+        for example, if edge attributes are on a {1,2,3,4} integer scale and 
+        the 4s should be removed first, next the 3s, etc., then the attr_vals
+        should be listed as [4,3,2,1]. 
+        
+    Returns
+    -------
+    BHC_seq : list
+        Images of the BHC_graph, with edges successively filtered. 
+        Element BHC_seq[0] is the graph after the initial (highest priority) 
+        filtration, BHC_seq[1] is the graph after the next filtration, etc. 
+            
+    Examples
+    --------
+    Consider a graph ...
+
+    """
+    # Shallow copy; we will only delete edges, not modify any containers
+    BHC = BHC_graph.copy()
+    rv = list()
+    for val in attr_vals: 
+        removals = []
+        for e in BHC.edges(data=True):
+            attr_val = e[2][attr_name]
+#            print(f'Edge={e}, attr_name={attr_name}, attr_val={attr_val}, val={val}')
+            if (comparator.upper()=='EQ'   and attr_val == val):
+                removals.append((e[0],e[1]))
+            elif (comparator.upper()=='LE' and attr_val <= val):
+                removals.append((e[0],e[1]))
+            elif (comparator.upper()=='LT' and attr_val <  val):
+                removals.append((e[0],e[1]))
+            elif (comparator.upper()=='GT' and attr_val > val):
+                removals.append((e[0],e[1]))
+            elif (comparator.upper()=='GE' and attr_val >= val):
+                removals.append((e[0],e[1]))
+            elif (comparator.upper()=='NE' and attr_val != val):
+                removals.append((e[0],e[1]))
+            elif (comparator.upper() in 'EQ LE LT GT GE NE'):
+                continue
+            else:
+                raise ValueError(f'Unrecognized comparator {comparator}')
+        BHC.remove_edges_from(removals)
+        rv.append(BHC.copy())
+    return rv
 
 
 
@@ -1175,145 +1371,11 @@ def check_lei(lei, display_warnings=True):
     return (check, syntax_errcodes)
 
 
-# String constants for metric names
-M_BVct = 'Bas_Vertex_count'
-M_BEct = 'Bas_Edge_count'
-M_BCrk = 'Bas_Cycle_rank'
-M_BCmp = 'Bas_Num_CComp'
-M_EQfxB = 'Ent_Qfull_B1'
-M_EQhxB = 'Ent_Qhetr_B1'
-M_EQfcB = 'Ent_Qfcon_B1'
-M_EQhcB = 'Ent_Qhcon_B1'
-M_EQecB = 'Ent_edgcn_B1'
-M_EDHmB = 'Ent_DjHom_B1'
-M_EDHmM = 'Ent_DjHom_M'
-M_ENlbl = 'Ent_Nlabl'
-M_GQfxB = 'Geo_Qfull_B1'
-M_GQhxB = 'Geo_Qhetr_B1'
-M_GQfcB = 'Geo_Qfcon_B1'
-M_GQhcB = 'Geo_Qhcon_B1'
-M_GQecB = 'Geo_edgcn_B1'
-M_GDHmB = 'Geo_DjHom_B1'
-M_GDHmM = 'Geo_DjHom_M'
-M_GNlbl = 'Geo_Nlabl'
-
-def complexity_workup(BHC):
-    """Calculates a standard set of complexity metrics for a BHC
-    
-    Most of the metrics involve quotienting the nodes of the BHC graph.
-    The nodes are quotiented by entity type and (separately) geographic
-    juridiction. 
-    
-    The following metrics are calculated:
+class BHCanalyzeError(RuntimeError):
+    def __init__(self, msg):
+        self.msg = msg
         
-    A. Basic metrics
-    
-      * Bas_Vertex_count = Number of nodes, original BHC graph 
-      * Bas_Edge_count   = Number of edges, BHC graph 
-      * Bas_Cycle_rank   = Cycle rank (b1), BHC graph 
-      * Bas_Num_CComp    = Number of connected components (b0), BHC graph
-      
-    B. Entity quotients
-    
-      * Ent_Qfull_B1     = Cycle rank, full entity quotient
-      * Ent_Qhetr_B1     = Cycle rank, heterogeneous entity quotient
-      * Ent_Qfcon_B1     = Cycle rank, condensed entity quotient
-      * Ent_Qhcon_B1     = Cycle rank, heterogeneous condensed entity quotient
-      * Ent_edgcn_B1 = 'Ent_edgcn_B1'
-      * Ent_DjHom_B1 = 'Ent_DjHom_B1'
-      * Ent_DjHom_M = 'Ent_DjHom_M'
-      * Ent_Nlabl = 'Ent_Nlabl'
-      
-    B. Beography quotients
-    
-      * Geo_Qfull_B1 = 'Geo_Qfull_B1'
-      * Geo_Qhetr_B1 = 'Geo_Qhetr_B1'
-      * Geo_Qfcon_B1 = 'Geo_Qfcon_B1'
-      * Geo_Qhcon_B1 = 'Geo_Qhcon_B1'
-      * Geo_edgcn_B1 = 'Geo_edgcn_B1'
-      * Geo_DjHom_B1 = 'Geo_DjHom_B1'
-      * Geo_DjHom_M = 'Geo_DjHom_M'
-      * Geo_Nlabl = 'Geo_Nlabl'
-
-    Parameters
-    ----------
-    BHC : networkx.DiGraph
-        A directed graph representing a bank holding company
-    
-    Returns
-    -------
-    int
-        Components in the projection of BHC to a simple undirected graph
         
-
-    """
-    
-    metrics = dict()
-    # Basic metrics, using the key constants defined above
-    metrics[M_BVct] = BHC.number_of_nodes()
-    metrics[M_BEct] = edge_count(BHC)
-    metrics[M_BCrk] = cycle_rank(BHC)
-    metrics[M_BCmp] = number_of_components(BHC)
-    # Quotiented by entity type
-    DIMEN = 'entity_type'
-    QEF = get_quotient(BHC, DIMEN, Q_FULL)
-    QEH = get_quotient(BHC, DIMEN, Q_HETERO)
-    QEFC = get_quotient(BHC, DIMEN, Q_FULL_COND)
-    QEHC = get_quotient(BHC, DIMEN, Q_HETERO_COND)
-    CE = get_contraction(BHC, DIMEN).to_undirected()
-    DMHE = get_disjoint_maximal_homogeneous_subgraphs(BHC, DIMEN)
-    metrics[M_EQfxB] = cycle_rank(QEF)
-    metrics[M_EQhxB] = cycle_rank(QEH)
-    metrics[M_EQfcB] = cycle_rank(QEFC)
-    metrics[M_EQhcB] = cycle_rank(QEHC)
-    metrics[M_EQecB] = cycle_rank(CE)
-    metrics[M_EDHmB] = cycle_rank(DMHE)
-    metrics[M_EDHmM] = number_of_components(DMHE)
-    metrics[M_ENlbl] = len(get_labels(BHC, DIMEN))
-    # Quotiented by geographic jurisdiction
-    DIMEN = 'GEO_JURISD'
-    QGF = get_quotient(BHC, DIMEN, Q_FULL)
-    QGH = get_quotient(BHC, DIMEN, Q_HETERO)
-    QGFC = get_quotient(BHC, DIMEN, Q_FULL_COND)
-    QGHC = get_quotient(BHC, DIMEN, Q_HETERO_COND)
-    CG = get_contraction(BHC, DIMEN).to_undirected()
-    DMHG = get_disjoint_maximal_homogeneous_subgraphs(BHC, DIMEN)
-    metrics[M_GQfxB] = cycle_rank(QGF)
-    metrics[M_GQhxB] = cycle_rank(QGH)
-    metrics[M_GQfcB] = cycle_rank(QGFC)
-    metrics[M_GQhcB] = cycle_rank(QGHC)
-    metrics[M_GQecB] = cycle_rank(CG)
-    metrics[M_GDHmB] = cycle_rank(DMHG)
-    metrics[M_GDHmM] = number_of_components(DMHG)
-    metrics[M_GNlbl] = len(get_labels(BHC, DIMEN))
-    return metrics
-
-
-## Calculates a full set of complexity metrics for a BHC, quotienting by
-## both entity type and geographic jurisdiction, and returns them as a dict.
-#def test_metrics(metrics, context):
-#    # Ensure that the BHC is a single connected component
-#    if (1 != metrics[M_BCmp]):
-#        LOG.error('BHC is not completely connected. '+M_BCmp+': '+str(metrics[M_BCmp])+', Context: '+context)
-#    # Confirm that Equation 3 (Euler-Poincare) holds
-#    if (metrics[M_BCrk] != metrics[M_BEct] - metrics[M_BVct] + metrics[M_BCmp]):
-#        LOG.error('Euler-Poincare fails. '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_BEct+': '+str(metrics[M_BEct])+', '+M_BVct+': '+str(metrics[M_BVct])+', '+M_BCmp+': '+str(metrics[M_BCmp])+', Context: '+context)
-#
-#    # Confirm that Theorem 3.2 Equation 6 (NBER version) holds -- entity type
-#    if (metrics[M_EQfxB] != metrics[M_BCrk] + metrics[M_BVct] - metrics[M_ENlbl]):
-#        LOG.error('Theorem 3.2 fails. '+M_EQfxB+': '+str(metrics[M_EQfxB])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_BVct+': '+str(metrics[M_BVct])+', '+M_ENlbl+': '+str(metrics[M_ENlbl])+', Context: '+context)
-#    # Confirm that Corollary 3.4 (NBER version) holds -- entity type
-#    if (metrics[M_EQhxB] != metrics[M_EDHmM] - metrics[M_ENlbl] + metrics[M_BCrk] - metrics[M_EDHmB]):
-#        LOG.error('Corollary 3.4 fails. '+M_EQhxB+': '+str(metrics[M_EQhxB])+', '+M_EDHmM+': '+str(metrics[M_EDHmM])+', '+M_ENlbl+': '+str(metrics[M_ENlbl])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_EDHmB+': '+str(metrics[M_EDHmB])+', Context: '+context)
-#
-#    # Confirm that Theorem 3.2 Equation 6 (NBER version) holds -- geography
-#    if (metrics[M_GQfxB] != metrics[M_BCrk] + metrics[M_BVct] - metrics[M_GNlbl]):
-#        LOG.error('Theorem 3.2 fails (Geographic quotient). '+M_GQfxB+': '+str(metrics[M_GQfxB])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_BVct+': '+str(metrics[M_BVct])+', '+M_GNlbl+': '+str(metrics[M_GNlbl])+', Context: '+context)
-#    # Confirm that Corollary 3.4 (NBER version) holds -- geography
-#    if (metrics[M_GQhxB] != metrics[M_GDHmM] - metrics[M_GNlbl] + metrics[M_BCrk] - metrics[M_GDHmB]):
-#        print('ERROR: Corollary 3.4 fails (Geographic quotient). '+M_GQhxB+': '+str(metrics[M_GQhxB])+', '+M_GDHmM+': '+str(metrics[M_GDHmM])+', '+M_GNlbl+': '+str(metrics[M_GNlbl])+', '+M_BCrk+': '+str(metrics[M_BCrk])+', '+M_GDHmB+': '+str(metrics[M_GDHmB])+', Context: '+context)
-
-
 
 if __name__ == "__main__":
     import doctest

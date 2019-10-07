@@ -20,7 +20,7 @@
 # Copyright 2019, Mark D. Flood
 #
 # Author: Mark D. Flood
-# Last revision: 22-Jun-2019
+# Last revision: 4-Sep-2019
 # -----------------------------------------------------------------------------
 
 __all__ = ['tic',
@@ -28,14 +28,18 @@ __all__ = ['tic',
            'currtime',
            'parse_command_line', 
            'read_config', 
+           'log_config', 
            'print_config',
+           'delim_norm',
            'make_asof',
            'assemble_asofs',
            'stringify_qtrend',
            'next_qtrend',
            'rcnt_qtrend',
+           'rcnt_midyear',
+           'timestamp2asofdate',
            ]
-__version__ = '0.3'
+__version__ = '0.5'
 __author__ = 'Mark D. Flood'
 
 
@@ -48,7 +52,6 @@ import logging.config as logcfg
 import re
 import configparser as cp
 
-LOG = logging.getLogger(__file__.split(os.path.sep)[-1].split('.')[0])
 
 
 
@@ -382,6 +385,7 @@ def next_qtrend(asofdate):
     return MRqtr
 
     
+
 def rcnt_qtrend(asofdate):
     """Constructs the most recent past quarter-end date for a given as-of date
     """
@@ -400,16 +404,27 @@ def rcnt_qtrend(asofdate):
     return MRqtr
 
     
+
 def rcnt_midyear(asofdate):
     """Constructs the most recent prior mid-year date for a given as-of date
     """
     yyyy = int(asofdate/10000)
     mmdd = int(asofdate) -yyyy*10000
-    if (mmdd > 630):
-        midyear = yyyy
-    else:
-        midyear = yyyy-1
+    if (mmdd < 630):
+        yyyy = yyyy-1
+    midyear = yyyy*10000 + 630
     return midyear
+
+
+
+def timestamp2asofdate(tstamp):
+    """Converts a Pandas Timestamp object to an int asofdate (yyyymmdd)
+    """
+    yyyy = 10000 * tstamp.year
+    mm = 100 * tstamp.month
+    dd = tstamp.day
+    asofdate = yyyy + mm + dd
+    return asofdate
 
 
 

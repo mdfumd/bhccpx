@@ -20,25 +20,8 @@
 # Copyright 2019, Mark D. Flood
 #
 # Author: Mark D. Flood
-# Last revision: 22-Jun-2019
+# Last revision: 5-Sep-2019
 # -----------------------------------------------------------------------------
-
-__all__ = ['resolve_dir_nic',
-           'ATTcsv2df',
-           'RELcsv2df',
-           'FDICCBcsv2df',
-           'FDICSoDcsv2df',
-           'FDICFailcsv2df',
-           'fetch_data',
-           'create_NIC',
-           'create_FDICSoD',
-           'create_FDICCB',
-           'create_FDICFail',
-           'NIC_highholders',
-           ]
-__version__ = '0.3'
-__author__ = 'Mark D. Flood'
-
 
 import os
 import time
@@ -48,158 +31,200 @@ import tempfile
 
 import graphviz as gv
 import zipfile as zf
+import networkx as nx
 import numpy as np 
 import pandas as pd
 import _pickle as pik 
 
 import bhc_util as UTIL
 
-LOG = UTIL.log_config(__file__.split(os.path.sep)[-1].split('.')[0])
+__all__ = ['resolve_dir_nic',
+           'fetch_data_nic',
+           'fetch_data_fdicsod',
+           'fetch_data_fdiccb',
+           'fetch_data_fdicfail',
+           'fetch_data_banksys',
+           ]
+__version__ = '0.5'
+__author__ = 'Mark D. Flood'
 
-# Standard prefixes to use for cached objects
-case_NIC = 'NIC'
-case_FDICSoD = 'FDICSoD'
-case_FDICCB = 'FDICCB'
-case_FDICFail = 'FDICFail'
-case_IDmaps = 'IDmaps'
-case_BankSys = 'BankSys'
-def fetch_data(spec, case):
+
+MODNAME = __file__.split(os.path.sep)[-1].split('.')[0]
+LOG = UTIL.log_config(MODNAME)
+
+# =============================================================================
+#   Cache management
+# =============================================================================
+def fetch_data_banksys(config, asofdate, sect):
+    spec = cache_spec(config, sect)
     data = None
-    asofdate = spec['asofdate']
-    cachedir = spec['cachedir']
-    cachefilename = f'{case}_{normalize_cache_date(asofdate, case)}.pik'
-    cachepath = os.path.join(cachedir, cachefilename)
-    # Clear the cache, if requested
-    if (case_NIC==case and spec['nic_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    elif (case_FDICCB==case and spec['fdiccb_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    elif (case_FDICSoD==case and spec['fdicsod_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    elif (case_FDICFail==case and spec['fdicfail_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    elif (case_IDmaps==case and spec['idmaps_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    elif (case_BankSys==case and spec['banksys_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    # Retrieve from cache, if available
+    cachepath = build_cachepath(spec, 'BankSys', asofdate)
+    if (spec['banksys_clearcache'] and os.path.isfile(cachepath)): 
+        os.remove(cachepath)
+    data = cache_retrieve(cachepath)
+    if (data is None):
+        LOG.debug(f'Cache file not found: {cachepath}; creating')
+        # Callback to the banksys constructor method
+        data = make_banksys(config, asofdate, sect)
+        cache_create(cachepath, data)
+    return data
+
+
+def fetch_data_fdicfail(config, sect):
+    spec = cache_spec(config, sect)
+    data = None
+    cachepath = os.path.join(spec['cachedir'], 'FDICFail.pik')
+    if (spec['fdicfail_clearcache'] and os.path.isfile(cachepath)): 
+        os.remove(cachepath)
+    data = cache_retrieve(cachepath)
+    if (data is None):
+        LOG.debug(f'Cache file not found: {cachepath}; creating')
+        indir = spec['fdicfail_dir']
+        filelist = spec['fdicfail_file']
+        data = create_FDICFail(indir, filelist)
+        cache_create(cachepath, data)
+    return data
+
+
+def fetch_data_fdiccb(config, asofdate, sect):
+    spec = cache_spec(config, sect)
+    data = None
+    cachepath = build_cachepath(spec, 'FDICCB', asofdate)
+    if (spec['fdiccb_clearcache'] and os.path.isfile(cachepath)): 
+        os.remove(cachepath)
+    data = cache_retrieve(cachepath)
+    if (data is None):
+        LOG.debug(f'Cache file not found: {cachepath}; creating')
+        indir = spec['fdiccb_dir']
+        filelist = spec['fdiccb_filelist']
+        data = create_FDICCB(indir, filelist, asofdate)
+        cache_create(cachepath, data)
+    return data
+
+
+def fetch_data_fdicsod(config, asofdate, sect):
+    spec = cache_spec(config, sect)
+    data = None
+    cachepath = build_cachepath(spec,'FDICSoD', asofdate, quarterly_data=False)
+    if (spec['fdicsod_clearcache'] and os.path.isfile(cachepath)): 
+        os.remove(cachepath)
+    data = cache_retrieve(cachepath)
+    if (data is None):
+        LOG.debug(f'Cache file not found: {cachepath}; creating')
+        indir = spec['fdicsod_dir']
+        filelist = spec['fdicsod_filelist']
+        data = create_FDICSoD(indir, filelist, asofdate)
+        cache_create(cachepath, data)
+    return data
+
+
+def fetch_data_nic(config, asofdate, sect):
+    spec = cache_spec(config, sect)
+    data = None
+    cachepath = build_cachepath(spec, 'NIC', asofdate)
+    if (spec['nic_clearcache'] and os.path.isfile(cachepath)): 
+        LOG.error(f"SHOULD NOT BE HERE: {spec['nic_clearcache']}")
+        os.remove(cachepath)
+    data = cache_retrieve(cachepath)
+    if (data is None):
+        LOG.debug(f'Cache file not found: {cachepath}; creating')
+        indir = spec['nic_dir']
+        fA = spec['nic_attributesactive']
+        fB = spec['nic_attributesbranch']
+        fC = spec['nic_attributesclosed']
+        fREL = spec['nic_relationships']
+        sep = spec['nic_sep']
+        filt = spec['nic_filterasof']
+        data = create_NIC(indir, fA, fB, fC, fREL, asofdate, sep, filt)
+        cache_create(cachepath, data)
+    return data
+
+
+
+def cache_create(cachepath, data):
+    """ Creates or replace a cache file with the pickled data object
+    """
+    if (data is not None):
+        LOG.debug(f'Creating cache file: {cachepath}')
+        f = open(cachepath, 'wb')
+        pik.dump(data, f)
+        f.close()
+    else:
+        LOG.warning(f'Skipping cache creation, data==None: {cachepath}')
+
+
+
+def cache_retrieve(cachepath):
+    """ Retrieves a given file from the cache, if available
+    """
+    data = None
     if (os.path.isfile(cachepath)):
         LOG.debug(f'Retrieving file from: {cachepath}')
         f = open(cachepath, 'rb')
         data = pik.load(f)
         f.close()
-    # If not available, create the cache file
     else:
-        LOG.debug(f'Cache file not found: {cachepath}; creating')
-        if (case_NIC==case):
-            indir = spec['nic_dir']
-            fA = spec['nic_attributesactive']
-            fB = spec['nic_attributesbranch']
-            fC = spec['nic_attributesclosed']
-            fREL = spec['nic_relationships']
-            sep = spec['nic_sep']
-            filt = spec['nic_filterasof']
-            data = create_NIC(indir, fA, fB, fC, fREL, asofdate, sep, filt)
-        elif (case_FDICCB==case):
-            indir = spec['fdiccb_dir']
-            filelist = spec['fdiccb_filelist']
-            data = create_FDICCB(indir, filelist, asofdate)
-        elif (case_FDICSoD==case):
-            indir = spec['fdicsod_dir']
-            filelist = spec['fdicsod_filelist']
-            data = create_FDICSoD(indir, filelist, asofdate)
-        elif (case_FDICFail==case):
-            indir = spec['fdicfail_dir']
-            filelist = spec['fdicfail_file']
-            data = create_FDICFail(indir, filelist)
-        elif (case_IDmaps==case):
-            LOG.info(f'Cached IDmaps not found at {cachepath}')
-        elif (case_BankSys==case):
-            LOG.info(f'Cached BankSys not found at {cachepath}')
-        if (data is not None):
-            f = open(cachepath, 'wb')
-            pik.dump(data, f)
-            f.close()
+        LOG.info(f'Requested cache file does not exist: {cachepath}')
     return data
 
-def cache_data(spec, case, data):
-    asofdate = spec['asofdate']
-    cachedir = spec['cachedir']
-    cachefilename = f'{case}_{normalize_cache_date(asofdate, case)}.pik'
-    cachepath = os.path.join(cachedir, cachefilename)
-    # Clear the cache, if requested
-    if (case_IDmaps==case and spec['idmaps_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    elif (case_BankSys==case and spec['banksys_clearcache']):
-        if os.path.isfile(cachepath): os.remove(cachepath)
-    elif (case_IDmaps==case):
-        LOG.info(f'Cached IDmaps not found at {cachepath}')
-    elif (case_BankSys==case):
-        LOG.info(f'Cached BankSys not found at {cachepath}')
-    if (data is not None):
-        f = open(cachepath, 'wb')
-        pik.dump(data, f)
-        f.close()
-    return data
 
-# =============================================================================
-#   Cache management
-# =============================================================================
-def clear_cache(cachedir, case, YQ0, YQ1):
-    """Clears the cache of any pickled files for chosen prefix and date range
+
+def cache_spec(config, sectname):
+    """Creates a cache specification dictionary from a config object.
     """
-    LOG.debug(f'Clearing cache of {case}_*.pik files for range: {YQ0}-{YQ1}')
-    asof_list = UTIL.assemble_asofs(YQ0, YQ1)
-    for asofdate in asof_list:
-        filename = f'{case}_{asofdate}.pik'
-        filepath = os.path.join(cachedir, filename)
-        if os.path.isfile(filepath):
-            os.remove(filepath)
-            
+    spec = dict()
+    sect = config[sectname]
+    spec['cachedir'] = sect['cachedir']
+    # NIC items
+    spec['nic_dir'] = resolve_dir_nic(sect['nic_dir'], sect['nic_subdir'])
+    spec['nic_attributesactive'] = eval(sect['nic_csv_filelist'])[0]
+    spec['nic_attributesbranch'] = eval(sect['nic_csv_filelist'])[1]
+    spec['nic_attributesclosed'] = eval(sect['nic_csv_filelist'])[2]
+    spec['nic_relationships'] = eval(sect['nic_csv_filelist'])[3]
+    spec['nic_transformations'] = eval(sect['nic_csv_filelist'])[4]
+    spec['nic_sep'] = sect['delim']
+    spec['nic_filterasof'] = True
+    spec['nic_clearcache'] = ('TRUE'==sect['nic_clearcache'].upper())
+    # FDIC CB items
+    spec['fdiccb_dir'] = sect['fdiccb_dir']
+    spec['fdiccb_filelist'] = eval(sect['fdiccb_csv_filelist'])
+    spec['fdiccb_clearcache'] = ('TRUE'==sect['fdiccb_clearcache'].upper())
+    # FDIC SoD items
+    spec['fdicsod_dir'] = sect['fdicsod_dir']
+    spec['fdicsod_filelist'] = eval(sect['fdicsod_csv_filelist'])
+    spec['fdicsod_clearcache'] = ('TRUE'==sect['fdicsod_clearcache'].upper())
+    # FDIC fail items
+    spec['fdicfail_dir'] = sect['fdicfail_dir']
+    spec['fdicfail_file'] = sect['fdicfail_csv_file']
+    spec['fdicfail_clearcache'] = ('TRUE'==sect['fdicfail_clearcache'].upper())
+    # BankSys items
+    spec['banksys_clearcache'] = ('TRUE'==sect['banksys_clearcache'].upper())
+    return spec
 
 
-def resolve_dir_nic(nic_dir, nic_subdir):
-    if ('NONE'==nic_subdir.upper()):
-        today = int(time.strftime("%Y%m%d"))
-        qtrend = UTIL.rcnt_qtrend(today)
-        nic_subdir = UTIL.stringify_qtrend(qtrend)
-        LOG.debug('Generated NIC subdir: '+nic_subdir)
+
+def build_cachepath(spec, case, asofdate, quarterly_data=True):
+    cachedir = spec['cachedir']
+    if (quarterly_data):
+        cachefilename = f'{case}_{UTIL.rcnt_qtrend(asofdate)}.pik'
     else:
-        nic_subdir = nic_subdir
-        LOG.debug('Provided NIC subdir: '+nic_subdir)
-    nic_path = os.path.join(nic_dir, nic_subdir)
-    LOG.debug('Resolved NIC directory: '+nic_path)
-    return nic_path
+        # FDIC SoD is annual data, based at the mid-year point
+        cachefilename = f'{case}_{UTIL.rcnt_midyear(asofdate)}.pik'
+    cachepath = os.path.join(cachedir, cachefilename)
+    return cachepath
 
-
-def normalize_cache_date(asofdate, case):
-    norm_date = 10000101
-    if (case_NIC==case):
-        norm_date = UTIL.rcnt_qtrend(asofdate)
-    elif (case_FDICSoD==case):
-        norm_date = UTIL.rcnt_qtrend(asofdate)
-    elif (case_FDICCB==case):
-        norm_date = UTIL.rcnt_qtrend(asofdate)
-    elif (case_FDICFail==case):
-        norm_date = UTIL.rcnt_qtrend(asofdate)
-    elif (case_IDmaps==case):
-        norm_date = UTIL.rcnt_qtrend(asofdate)
-    elif (case_BankSys==case):
-        norm_date = UTIL.rcnt_qtrend(asofdate)
-    else:
-        LOG.error('Invalid cache case: '+case)
-    return norm_date
     
+
 # =============================================================================
 #   NIC data
 # =============================================================================
 # Mnemonic indices for the NIC data list
 IDX_Attributes = 0
 IDX_Relationships = 1
-IDX_HighHolder = 2
-IDX_Entities = 3
-IDX_Parents = 4
-IDX_Offspring = 5
+#IDX _HighHolder = 2
+#IDX _Entities = 3
+#IDX _Parents = 4
+#IDX _Offspring = 5
 def create_NIC(indir, fA, fB, fC, fRel, asofdate, sep=',', filter_asof=True):
     """Parses the NIC data and creates a list of DataFrames for the asofdate
 
@@ -207,100 +232,33 @@ def create_NIC(indir, fA, fB, fC, fRel, asofdate, sep=',', filter_asof=True):
     The returned list contains pointers to six objects, indexed as follows:
         
        0. IDX_Attributes - NIC attributes, combining active, branch, and closed
-       1. IDX_Relationships - NIC relationships
-       2. IDX_HighHolder - List of the high holder BHCs in the system
-       3. IDX_Entities - Map (dict)
-       4. IDX_Parents       = 4
-       5. IDX_Offspring     = 5
-       
+       1. IDX_Relationships - NIC relationships      
     """
+#       2. IDX _HighHolder - List of the high holder BHCs in the system
+#       3. IDX _Entities - Map (dict)
+#       4. IDX _Parents       = 4
+#       5. IDX _Offspring     = 5
+    
     data = []
-    # First, populate DATA with the raw info from the CSV files:    
-#    csvfilepathA = os.path.join(indir, file_attA)
-#    csvfilepathB = os.path.join(indir, file_attB)
-#    csvfilepathC = os.path.join(indir, file_attC)
-#    ATTdf_a = ATTcsv2df(csvfilepathA, asofdate, 'A')
-#    ATTdf_b = ATTcsv2df(csvfilepathB, asofdate, 'B')
-#    ATTdf_c = ATTcsv2df(csvfilepathC, asofdate, 'C')
-#    ATTdf = makeATTs(indir, file_attA, file_attB, file_attC, asofdate)
-#def makeATTs(indir, fA, fB, fC, asofdate, sep=',', filter_asof=False):
     csvfilepathA = os.path.join(indir, fA)
     csvfilepathB = os.path.join(indir, fB)
     csvfilepathC = os.path.join(indir, fC)
-#    print(f'Active: {csvfilepathA}, Branch: {csvfilepathB}, Closed: {csvfilepathC}')
     ATTdf_a = ATTcsv2df(csvfilepathA, asofdate, 'A', sep, filter_asof)
     ATTdf_b = ATTcsv2df(csvfilepathB, asofdate, 'B', sep, filter_asof)
     ATTdf_c = ATTcsv2df(csvfilepathC, asofdate, 'C', sep, filter_asof)
-#    print(f'{len(ATTdf_a)} Active, {len(ATTdf_b)} Branch, {len(ATTdf_c)} Closed')
     ATTdf = pd.concat([ATTdf_a, ATTdf_b, ATTdf_c])
     data.insert(IDX_Attributes, ATTdf)
     csvfilepathR = os.path.join(indir, fRel)
-    RELdf = RELcsv2df(csvfilepathR, asofdate)
+    RELdf = RELcsv2df(csvfilepathR, asofdate, sep)
     data.insert(IDX_Relationships, RELdf)
-    # Then, add derived structures based on the Relationships data:    
-    derived_data = NIC_highholders(RELdf, asofdate)
-    data.insert(IDX_HighHolder, derived_data[0])
-    data.insert(IDX_Entities, derived_data[1])
-    data.insert(IDX_Parents, derived_data[2])
-    data.insert(IDX_Offspring, derived_data[3])
+#    # Then, add derived structures based on the Relationships data:    
+#    derived_data = NIC_highholders(RELdf, asofdate)
+#    data.insert(IDX _HighHolder, derived_data[0])
+#    data.insert(IDX _Entities, derived_data[1])
+#    data.insert(IDX _Parents, derived_data[2])
+#    data.insert(IDX _Offspring, derived_data[3])
     return data
 
-def NIC_highholders(RELdf, asofdate):
-    """Creates four key derived objects from a NIC relationships dataframe
-    
-    The derived objects are:
-      * entities is the set of all NIC nodes appearing the relationships, 
-        either as parents or offspring
-      * parents is a dictionary, keyed by individual node_ids, of the 
-        set of immediate parents of each node
-      * offspring is a dictionary, keyed by individual node_ids, of the 
-        set of immediate offspring of each node
-      * high_holders is the set of all high-holder entities, defined as any 
-        node with no immediate parent 
-    
-    Note that a high-holder node will have an entry in the parents dict, but
-    this entry will point to an empty set (high holders have no parents)
-    """
-#    (ID_RSSD_PARENT, ID_RSSD_OFFSPRING, DT_START, DT_END) = REL_IDcols(RELdf)
-    # Create some containers for derived structures
-    parents = {}     # Dictionary of immediate parents (a set) for each node
-    offspring = {}   # Dictionary of immediate children (a set) for each node
-    entities = set()
-    high_holders = set()
-    # Loop through Relationships to assemble entities, parents, and offspring
-    for row in RELdf.iterrows():
-        date0 = int(row[1]['DT_START'])
-        date1 = int(row[1]['DT_END'])
-        rssd_par = row[1]['ID_RSSD_PARENT']
-        rssd_off = row[1]['ID_RSSD_OFFSPRING']
-#    for row in RELdf.iterrows():
-#        date0 = int(row[0][DT_START])
-#        date1 = int(row[0][DT_END])
-#        rssd_par = row[0][ID_RSSD_PARENT]
-#        rssd_off = row[0][ID_RSSD_OFFSPRING]
-        if (asofdate < date0 or asofdate > date1):
-            LOG.warning(f'Bad asofdate: {asofdate}; '+
-                'out of bounds: {rssd_par}, {rssd_off}, {date0}, {date1}')
-            continue   
-        entities.add(rssd_par)
-        try:
-            offspring[rssd_par].add(rssd_off)
-        except KeyError:
-            offspring[rssd_par] = set()
-            offspring[rssd_par].add(rssd_off)
-        entities.add(rssd_off)
-        try:
-            parents[rssd_off].add(rssd_par)
-        except KeyError:
-            parents[rssd_off] = set()
-            parents[rssd_off].add(rssd_par)
-    # Filter entities to find the high_holders
-    for ent in entities:
-        try:
-            len(parents[ent])      # Count the parents, if they exist
-        except KeyError:
-            high_holders.add(ent)  # High holders are those w/zero parents
-    return high_holders, entities, parents, offspring
 
 
 def ATTcsv2df(csvfile, asofdate, nicsource, sep=',', filter_asof=False):
@@ -403,7 +361,8 @@ def ATTcsv2df(csvfile, asofdate, nicsource, sep=',', filter_asof=False):
         'URL':object, 
         'ZIP_CD':object
     }
-    LOG.info(f'Reading CSV file {csvfile}')
+    sep = UTIL.delim_norm(sep)
+    LOG.info(f'Reading CSV file {csvfile} with delimiter: {sep}')
     ATTdf = pd.read_csv(csvfile, dtype=DTYPES_ATT, sep=sep)
     # Create new column to serve as the primary key
     ATTdf['rssd'] = ATTdf['ID_RSSD']
@@ -426,7 +385,8 @@ def RELcsv2df(csvfile, asofdate, sep=',', filter_asof=True):
     You must convert an XML download to tab-delimited CSV before using 
     this function. Upon reading, the contents of the CSV file are converted 
     to appropriate primitive types and stored in a Pandas dataframe, 
-    which RELcsv2df returns. 
+    which is returned.
+    . 
     The returned dataframe is indexed (and sorted) on four new fields:
       * rssd_par is a copy of the ID_RSSD_PARENT field
       * rssd_off is a copy of the ID_RSSD_OFFSPRING field
@@ -476,11 +436,12 @@ def RELcsv2df(csvfile, asofdate, sep=',', filter_asof=True):
         'REG_IND':np.int8, 
         'RELN_LVL':np.int8
     }
-    LOG.info(f'Reading CSV file {csvfile}')
+    sep = UTIL.delim_norm(sep)
+    LOG.info(f'Reading CSV file {csvfile} with delimiter: {sep}')
     RELdf = pd.read_csv(csvfile, dtype=DTYPES_REL, sep=sep)
     # Create new columns to serve as the (compound) primary key
     RELdf['rssd_par'] = RELdf['ID_RSSD_PARENT']
-    RELdf['rssd_off'] = RELdf['ID_RSSD_PARENT']
+    RELdf['rssd_off'] = RELdf['ID_RSSD_OFFSPRING']
     RELdf['dt0'] = RELdf['DT_START']
     RELdf['dt1'] = RELdf['DT_END']
     if (filter_asof):
@@ -490,6 +451,72 @@ def RELcsv2df(csvfile, asofdate, sep=',', filter_asof=True):
     RELdf.set_index(['rssd_par', 'rssd_off', 'dt0', 'dt1'], append=True, inplace=True)
     RELdf.sort_index(inplace=True)
     return RELdf
+    
+
+
+def resolve_dir_nic(nic_dir, nic_subdir):
+    if ('NONE'==nic_subdir.upper()):
+        today = int(time.strftime("%Y%m%d"))
+        qtrend = UTIL.rcnt_qtrend(today)
+        nic_subdir = UTIL.stringify_qtrend(qtrend)
+        LOG.debug('Generated NIC subdir: '+nic_subdir)
+    else:
+        nic_subdir = nic_subdir
+        LOG.debug('Provided NIC subdir: '+nic_subdir)
+    nic_path = os.path.join(nic_dir, nic_subdir)
+    LOG.debug('Resolved NIC directory: '+nic_path)
+    return nic_path
+
+
+
+def make_banksys(config, asofdate, sect):
+    """Reads or creates a graph of the full banking system on a given date
+    
+    The function looks for an existing graph in a pickle file
+    located at sysfilepath (for example, .../cachedir/NIC__YYYYMMDD.pik),
+    where YYYYMMDD is the asofdate. 
+    If this file exists, it is unpackeded from the pickle and returned.
+    If the file does not (yet) exist, the NetworkX DiGraph is instead created
+    from the relationships data and dumped into a new pickle at sysfilepath.
+    The graph is a naked directed graph whose nodes are NIC entities and 
+    whose edges point from parent nodes to offspring nodes. 
+    The function then returns this digraph (either newly created or unpickled). 
+    """
+    UTIL.tic()
+    trace_logging = ('TRUE'==config[sect]['trace_logging'].upper())
+    NICdata = fetch_data_nic(config, asofdate, sect)
+    ATTdf = NICdata[IDX_Attributes]
+    RELdf = NICdata[IDX_Relationships]
+    BankSys = nx.DiGraph()
+    LOG.debug(f'Relationships table has {len(RELdf)} obs')
+    for row in RELdf.iterrows():
+        date0 = int(row[1]['DT_START'])
+        date1 = int(row[1]['DT_END'])
+        rssd_par = row[1]['ID_RSSD_PARENT']
+        rssd_off = row[1]['ID_RSSD_OFFSPRING']
+        if (trace_logging):
+            LOG.debug(f'Reln: asofdate={asofdate}, rssd_par={rssd_par}'+
+                ', rssd_off={rssd_off}, date0={date0}, date1={date1}')
+        if (asofdate < date0 or asofdate > date1):
+            LOG.warning(f'As-of date: {asofdate} is out of bounds: '+
+                f'rssd_par={rssd_par}, rssd_off={rssd_off}, '+
+                f'date0={date0}, date1={date1}')
+            continue   
+        BankSys.add_edge(rssd_par, rssd_off)
+    # Adding in the singleton institutions (no edges in Relationships file)
+    LOG.info(f'System, as of {asofdate}, has {BankSys.number_of_nodes()} ' +
+              f'nodes and {BankSys.number_of_edges()} edges')
+    ATTdf = ATTdf[ATTdf.DT_END >= asofdate]
+    ATTdf = ATTdf[ATTdf.DT_OPEN <= asofdate]
+    nodes_BankSys = set(BankSys.nodes)
+    nodes_ATTdf = set(ATTdf['ID_RSSD'].unique())
+    nodes_new = nodes_ATTdf.difference(nodes_BankSys)
+    BankSys.add_nodes_from(nodes_new)
+    LOG.info(f'PROFILE building BankSys {asofdate} took {UTIL.toc()} secs.')
+    LOG.debug(f'System, as of {asofdate}, has {BankSys.number_of_nodes()} ' +
+              f'nodes and {BankSys.number_of_edges()} edges; '+
+              f'{len(nodes_new)} added, out of {len(nodes_ATTdf)} candidates')
+    return BankSys
     
 
 
@@ -505,6 +532,7 @@ def create_FDICFail(indir, filename):
     LOG.debug(f'FDIC Failure data has {len(data)} obs')
     return data
         
+
 def FDICFailcsv2df(csvfile):
     DTYPES_FAIL = {
         'CERT':np.int32, 
@@ -589,12 +617,6 @@ def create_FDICSoD(indir, filelist, asofdate):
 
 
 
-
-
-
-
-
-
 def FDICSoDcsv2df(csvfile):
     DTYPES_FDICSoD = {
         'YEAR':np.int16,
@@ -626,7 +648,7 @@ def FDICSoDcsv2df(csvfile):
         'NAMEBR':object,
         'NECTABR':np.int8,
         'NECNAMB':object,
-        'PLACENUM':np.int32,
+        'PLACENUM':object,
         'SIMS_ACQUIRED_DATE':object,
         'SIMS_ESTABLISHED_DATE':object,
         'SIMS_LATITUDE':np.float32,
@@ -780,236 +802,6 @@ def FDICCBcsv2df(csvfile, asofdate, filter_asof=True):
         
 
         
-def create_idmaps(config, asofdate):
-        
-    spec = cache_spec(config, asofdate)
-    IDmaps = DATA.fetch_data(spec, DATA.case_IDmaps)
-    
-    if (IDmaps is None):
-        UTIL.tic()
-        
-        # Assembling the raw materials
-        LOG.info(f'Building BankSys object for {asofdate}')
-        BankSys = make_banksys(config, asofdate, read_data=True)
-        LOG.info(f'PROFILE {UTIL.toc()} secs: make_banksys {asofdate}')
-        
-        LOG.debug(f'Assembling cache spec for {asofdate}')
-        LOG.info(f'Building NICATTdf object for {asofdate}')
-        NICdata = DATA.fetch_data(spec, DATA.case_NIC)
-        NICATTdf = NICdata[DATA.IDX_Attributes]
-        LOG.info(f'PROFILE {UTIL.toc()} secs: fetch NICdata {asofdate}')
-        
-#        LOG.info(f'Building FDICCBdf object for {asofdate}')
-#        FDICCBdf = DATA.fetch_data(spec, DATA.case_FDICCB)
-#        LOG.info(f'PROFILE {UTIL.toc()} secs: fetch FDICCBdf {asofdate}')
-        
-        LOG.info(f'Building FDICSoDdf object for {asofdate}')
-        FDICSoDdf = DATA.fetch_data(spec, DATA.case_FDICSoD)
-        FDICSoDdf = FDICSoDdf[FDICSoDdf['BRNUM']==0]        # Main office only
-        LOG.info(f'PROFILE {UTIL.toc()} secs. fetch FDICSoDdf {asofdate}')
-        
-        # Building RSSD2CERT from BankSys, FDIC SoD, and NIC data
-        RSSD2CERT = dict.fromkeys(BankSys.nodes, 0)
-        dfQ = f'RSSDID > 0'
-        resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDID']]
-        RSSD2CERTsod = dict(zip(resultset.RSSDID, resultset.CERT))
-        dfQ = f'ID_FDIC_CERT > 0'
-        resultset = NICATTdf.query(dfQ)[['ID_FDIC_CERT', 'ID_RSSD']]
-        RSSD2CERTnic = dict(zip(resultset.ID_RSSD, resultset.ID_FDIC_CERT))
-        if (True):
-            RSSD2CERT.update(RSSD2CERTsod)
-            RSSD2CERT.update(RSSD2CERTnic)
-        else:
-            RSSD2CERT.update(RSSD2CERTnic)
-            RSSD2CERT.update(RSSD2CERTsod)
-        LOG.info(f'PROFILE {UTIL.toc()} secs. RSSD2CERT {asofdate}')
-        
-        # Reversing the mapping:  CERT2RSSD
-        CERT2RSSD = dict()
-        for k, v in RSSD2CERT.items():
-            CERT2RSSD.setdefault(v, set()).add(k)
-        LOG.info(f'PROFILE {UTIL.toc()} secs. CERT2RSSD {asofdate}')
-        
-        # Building CERT2HCR from FDIC SoD data
-        dfQ = f'CERT > 0'
-        resultset = FDICSoDdf.query(dfQ)[['CERT', 'RSSDHCR']]
-        CERT2HCR = dict(zip(resultset.CERT, resultset.RSSDHCR))
-        LOG.info(f'PROFILE {UTIL.toc()} secs. CERT2HCR {asofdate}')
-        
-        # Reversing the mapping:  HCR2CERT
-        HCR2CERT = dict()
-        for k, v in CERT2HCR.items():
-            HCR2CERT.setdefault(v, set()).add(k)
-        LOG.info(f'PROFILE {UTIL.toc()} secs. HCR2CERT {asofdate}')
-        
-        IDmaps = (CERT2HCR, HCR2CERT, CERT2RSSD, RSSD2CERT)
-        DATA.cache_data(spec, DATA.case_IDmaps, IDmaps)
-        LOG.info(f'PROFILE {UTIL.toc()} secs: cache_data {asofdate}')
-        
-        IDlens = (len(CERT2HCR), len(HCR2CERT), len(CERT2RSSD), len(RSSD2CERT))
-        LOG.debug(f'IDmaps have {IDlens} obs')
-    else:
-        LOG.info('ID maps found')
-    return IDmaps
-
-
-
-#def fetch_NIC(outdir, asofdate, indir=None, fA=None, fB=None, fC=None, fREL=None):
-#    NIC = None
-#    datafilename = 'DATA_'+str(asofdate)+'.pik'
-#    datafilepath = os.path.join(outdir, datafilename)
-#    nonefiles = (None==indir or None==fA or None==fB or None==fC or None==fREL)
-#    if (os.path.isfile(datafilepath)):
-#        f = open(datafilepath, 'rb')
-#        NIC = pik.load(f)
-#        f.close()
-#    elif (not(nonefiles)):
-#        NIC = makeDATA(indir, fA, fB, fC, fREL, asofdate)
-#        f = open(datafilepath, 'wb')
-#        pik.dump(NIC, f)
-#        f.close()
-#    return NIC
-
-
-    
-    
-#def fetch(cachedir, filename):
-#    data = None
-#    datafilepath = os.path.join(cachedir, filename)
-#    if (os.path.isfile(datafilepath)):
-#        f = open(datafilepath, 'rb')
-#        data = pik.load(f)
-#        f.close()
-#    elif (spec is not None):
-#        case = spec['type']
-#        asofdate = spec['asofdate']
-#        if ('NIC'==case):
-#            fA = spec['file_ATTRIBUTES_ACTIVE']
-#            fB = spec['file_ATTRIBUTES_BRANCH']
-#            fC = spec['file_ATTRIBUTES_CLOSED']
-#            fREL = spec['file_RELATIONSHIPS']
-#            data = makeDATA(cachedir, fA, fB, fC, fREL, asofdate)
-#        elif ('FDICCB'==case):
-#            pass
-#        elif ('FDICSoD'==case):
-#            pass
-#        elif ('FDICFail'==case):
-#            pass
-#        f = open(datafilepath, 'wb')
-#        pik.dump(data, f)
-#        f.close()
-#    return data
-
-
-
-## A convenience function to look up and return the column number for the 
-## four columns composing the index in the relationships dataframe. 
-## See the function RELcsv2df for further details. 
-#def REL_IDcols(RELdf):
-#    # Get the column numbers to dereference the values packed in the multiindex
-#    ID_RSSD_PARENT = RELdf.index.names.index('ID_RSSD_PARENT')
-#    ID_RSSD_OFFSPRING = RELdf.index.names.index('ID_RSSD_OFFSPRING')
-#    DT_START = RELdf.index.names.index('DT_START')
-#    DT_END = RELdf.index.names.index('DT_END')
-#    return ID_RSSD_PARENT, ID_RSSD_OFFSPRING, DT_START, DT_END
-
-
-
-#def maps_rssd_cert(DATA):
-#    rssd2cert = dict()
-#    cert2rssd = dict()
-#    ATTdf = DATA[IDX_Attributes]
-#    ATTdf = ATTdf[ATTdf.ID_FDIC_CERT > 0]
-#    for idx,row in ATTdf.iterrows():
-#        rssd = idx
-#        cert = row['ID_FDIC_CERT']
-#        rssd2cert[rssd] = cert
-#        cert2rssd[cert] = rssd
-#    return (rssd2cert, cert2rssd)
-#
-#
-#def augment_FAILdf(FAILdf, outdir, dataasof):
-#    FAILdf.sort_values(by=['FAILDATE'], inplace=True)
-#    DATA = fetch_NIC(outdir, dataasof)
-#    ATTdf = DATA[IDX_Attributes]
-#    ATTdf = ATTdf[ATTdf.ID_FDIC_CERT > 0]
-#    (rssd2cert, cert2rssd) = maps_rssd_cert(DATA)
-#    FAILdf2 = FAILdf.copy(deep=True)
-#    FAILdf2['RSSD']=-1
-#    FAILdf2['RSSD_HH']=-1
-#    FAILdf2['ENTITY_TYPE']=''
-#    FAILdf2['CNTRY_NM']=''
-#    FAILdf2['STATE_ABBR_NM']=''
-#    rcntasof = -1
-#    banksys = None
-#    for idx,row in FAILdf.iterrows():
-#        failasof = FAILdf.loc[idx]['FAILDATE']
-#        failasof = failasof.year*10000 + failasof.month*100 + failasof.day
-#        if (rcntasof != UTIL.rcnt_qtrend(failasof)):
-#            rcntasof = UTIL.rcnt_qtrend(failasof)
-#            sysfilename = 'NIC_'+'_'+str(rcntasof)+'.pik'
-#            sysfilepath = os.path.join(outdir, sysfilename)
-#            f = open(sysfilepath, 'rb')
-#            banksys = pik.load(f)
-#            f.close()
-#        cert = FAILdf.loc[idx]['CERT']
-#        rssd = cert2rssd[cert]
-#        NICdict = ATTdf.loc[rssd].to_dict()
-#        FAILdf2.loc[cert,('RSSD')] = rssd
-#        FAILdf2.loc[cert,('RSSD_HH')] = rssd
-##        FAILdf2.loc[cert,('DT_OPEN')] = NICdict['DT_OPEN']
-##        FAILdf2.loc[cert,('DT_START')] = NICdict['DT_START']
-##        FAILdf2.loc[cert,('DT_END')] = NICdict['DT_END']
-#        FAILdf2.loc[cert,('ENTITY_TYPE')] = NICdict['ENTITY_TYPE']
-##        FAILdf2.loc[cert,('CNTRY_CD')] = NICdict['CNTRY_CD']
-#        FAILdf2.loc[cert,('COUNTRY')] = NICdict['CNTRY_NM'].strip()
-#        FAILdf2.loc[cert,('STATE')] = NICdict['STATE_ABBR_NM']
-#    return FAILdf2
-
-
-
-#def fetch_banksys(sysfilepath, csvfilepath, asofdate):
-##    DATA = None
-##    datafilename = 'DATA_'+str(asofdate)+'.pik'
-##    datafilepath = os.path.join(outdir, datafilename)
-##    nonefiles = (None==indir or None==fA or None==fB or None==fC or None==fREL)
-##    if (os.path.isfile(datafilepath)):
-##        f = open(datafilepath, 'rb')
-##        DATA = pik.load(f)
-##        f.close()
-##    elif (not(nonefiles)):
-##        DATA = makeDATA(indir, fA, fB, fC, fREL, asofdate)
-##        f = open(datafilepath, 'wb')
-##        pik.dump(DATA, f)
-##        f.close()
-##    return DATA
-#
-#    BankSys = None
-#    if os.path.isfile(sysfilepath):
-##        if (veryverbose): print('FOUND: Banking system file path:   ', sysfilepath)
-#        f = open(sysfilepath, 'rb')
-#        BankSys = pik.load(f)
-#        f.close()
-#    else:
-##        if (veryverbose): print('CREATING: Banking system file path:', sysfilepath, asofdate)
-#        BankSys = nx.DiGraph()
-##        if (veryverbose): print('CSV file path:', csvfilepath, asofdate)
-#        RELdf = UTIL.RELcsv2df(csvfilepath, asofdate)
-#        (ID_RSSD_PARENT, ID_RSSD_OFFSPRING, DT_START, DT_END) = UTIL.REL_IDcols(RELdf)
-#        for row in RELdf.iterrows():
-#            date0 = int(row[0][DT_START])
-#            date1 = int(row[0][DT_END])
-#            rssd_par = row[0][ID_RSSD_PARENT]
-#            rssd_off = row[0][ID_RSSD_OFFSPRING]
-#            if (asofdate < date0 or asofdate > date1):
-#                if (verbose): print('ASOFDATE,', asofdate, 'out of bounds:', rssd_par, rssd_off, date0, date1)
-#                continue   
-#            BankSys.add_edge(rssd_par, rssd_off)
-#        f = open(sysfilepath, 'wb')
-#        pik.dump(BankSys, f)
-#        f.close()
-##    if (veryverbose): print('System as of '+str(asofdate)+' has', BankSys.number_of_nodes(), 'nodes and', BankSys.number_of_edges(), 'edges')
-#    return BankSys
 
 # =============================================================================
 #   Utility methods
@@ -1079,7 +871,8 @@ def sed(textfile, pattern, replace, N=0):
                 raise e
 
         
-def log_bhc_svg(BHC, outdir, fileroot, colormap, title=None):
+def log_bhc_svg(BHC, outdir, fileroot, colormap, dim='entity_type', 
+                title=None, condense=False):
     """Create an SVG image file representing a BHC. 
     
     The file is stored in the outdir, with the filename: 
@@ -1093,8 +886,16 @@ def log_bhc_svg(BHC, outdir, fileroot, colormap, title=None):
         vis.node('TITLE', "info", shape="doublecircle", fontsize="20", style="filled", fillcolor="orange", tooltip=title)
     vis.attr('node', fontsize='8')
     vis.attr('node', fixedsize='true')
-    vis.attr('node', width='0.7')
-    vis.attr('node', height='0.3')
+    if condense:
+        # Reasonable svg viewbox=1700x700pt; graph scale=.03,.40; graph translate=4,250
+        vis.attr('graph', size='9, 11')
+        vis.attr('graph', scale='2, 5')
+        vis.attr('node', shape='circle')
+        vis.attr('node', width='0.04')
+    else:
+        vis.attr('node', shape='ellipse')
+        vis.attr('node', width='0.7')
+        vis.attr('node', height='0.3')
     for N in BHC.nodes():
         NM_LGL = ''
         ENTITY_TYPE = 'ZZZ'
@@ -1107,11 +908,74 @@ def log_bhc_svg(BHC, outdir, fileroot, colormap, title=None):
             attribute_error = False
         except KeyError as KE:
             warnings.append(f'Invalid attribute data for RSSD={N} for {fileroot}')
+        color_key = ENTITY_TYPE
+        if (dim=='GEO_JURISD'):
+            color_key = GEO_JURISD.replace(' - 0', '').strip()
+        tt = f'[{N}] {ENTITY_TYPE}\\n------------\\n{NM_LGL}\\n------------\\n{GEO_JURISD}'
+        if condense:
+            lbl = ''
+        else:
+            lbl = str(N)
+        if (attribute_error):
+            vis.node('rssd'+str(N), lbl, style="filled", fillcolor="red;.5:green", tooltip=tt)
+        else:
+            fc = colormap[color_key]
+            vis.node('rssd'+str(N), lbl, style="filled", fillcolor=fc, tooltip=tt)
+    for E in BHC.edges():
+        src = 'rssd' + str(E[0])
+        tgt = 'rssd' + str(E[1])
+        Vs = BHC.node[E[0]]
+        Vt = BHC.node[E[1]]
+        col = 'red'
+        if (dim not in Vs) or (dim not in Vt):
+            col='green'
+        elif Vs[dim]==Vt[dim]:
+            col='black'
+        vis.edge(src, tgt, arrowsize='0.3', color=col)
+    svg_path = os.path.join(outdir, f'{fileroot}')
+    vis.render(filename=svg_path, format='svg')
+
+def log_bhcq_svg(BHC, outdir, fileroot, colormap, dim='entity_type', title=None):
+    """Create an SVG image file representing a BHC quotient graph. 
+    
+    The file is stored in the outdir, with the filename: 
+    RSSD_<rssd_hh>_<asofdate>.svg. If popup is set to True, then the 
+    function will also launch a browser to display the file. 
+    """
+    warnings = []
+    vis = gv.Graph()
+    if (title is not None):
+#        dot.attr(label=r'\n'+title)
+        vis.node('TITLE', "info", shape="doublecircle", fontsize="20", style="filled", fillcolor="orange", tooltip=title)
+    vis.attr('node', fontsize='8')
+    vis.attr('node', fixedsize='true')
+#    vis.attr('node', height='0.3')
+    vis.attr('node', shape='circle')
+    vis.attr('node', width='0.5')
+    for N in BHC.nodes():
+        NM_LGL = ''
+        ENTITY_TYPE = 'ZZZ'
+        GEO_JURISD = 'ZZZ'
+        attribute_error = True
+        try:
+            NM_LGL = BHC.node[N]['nm_lgl'].strip()
+            ENTITY_TYPE = BHC.node[N]['entity_type']
+            GEO_JURISD = BHC.node[N]['GEO_JURISD']
+            attribute_error = False
+        except KeyError as KE:
+            warnings.append(f'Invalid attribute data for RSSD={N} for {fileroot}')
+        color_key = ENTITY_TYPE
+        if (dim=='GEO_JURISD'):
+            color_key = GEO_JURISD.replace(' - 0', '').strip()
         tt = f'[{N}] {ENTITY_TYPE}\\n------------\\n{NM_LGL}\\n------------\\n{GEO_JURISD}'
         if (attribute_error):
-            vis.node('rssd'+str(N), str(N), style="filled", fillcolor="red;.5:green", tooltip=tt)
+#            vis.node('rssd'+str(N), str(N), style="filled", fillcolor="red;.5:green", tooltip=tt)
+#            vis.node('rssd'+str(N), str(N), style="filled", fillcolor="red;.5:green", tooltip=tt)
+            vis.node('rssd'+str(N), str(N), style="filled", fillcolor="beige", tooltip=tt)
         else:
-            fc = colormap[ENTITY_TYPE]
+            fc = colormap[color_key]
+            fc = 'beige'
+#            vis.node('rssd'+str(N), str(N), style="filled", fillcolor=fc, tooltip=tt)
             vis.node('rssd'+str(N), str(N), style="filled", fillcolor=fc, tooltip=tt)
     for E in BHC.edges():
         src = 'rssd' + str(E[0])
@@ -1119,17 +983,19 @@ def log_bhc_svg(BHC, outdir, fileroot, colormap, title=None):
         Vs = BHC.node[E[0]]
         Vt = BHC.node[E[1]]
         col = 'red'
-        if ('entity_type' not in Vs) or ('entity_type'not in Vt):
+        if (dim not in Vs) or (dim not in Vt):
             col='green'
-        elif Vs['entity_type']==Vt['entity_type']:
+            col='black'
+        elif Vs[dim]==Vt[dim]:
             col='black'
         vis.edge(src, tgt, arrowsize='0.3', color=col)
     svg_path = os.path.join(outdir, f'{fileroot}')
     vis.render(filename=svg_path, format='svg')
 
 
-
-
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
+    
+    
+    

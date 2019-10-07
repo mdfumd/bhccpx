@@ -20,24 +20,8 @@
 # Copyright 2019, Mark D. Flood
 #
 # Author: Mark D. Flood
-# Last revision: 16-Jul-2019
+# Last revision: 4-Sep-2019
 # -----------------------------------------------------------------------------
-
-__all__ = ['make_dirs', 
-           'make_dir_nic',
-           'make_dir_fdiccb',
-           'make_dir_fdicsod',
-           'make_dir_fdicfail',
-           'download_data', 
-           'download_data_nic',
-           'download_data_fdiccb',
-           'download_data_fdicsod',
-           'download_data_fdicfail',
-           'main',
-           ]
-__version__ = '0.3'
-__author__ = 'Mark D. Flood'
-
 
 import os
 import logging
@@ -49,8 +33,26 @@ import progressbar as pb
 import bhc_util as UTIL
 import bhc_data as DATA
 
-LOG = UTIL.log_config(__file__.split(os.path.sep)[-1].split('.')[0])
 
+__all__ = ['make_dirs', 
+           'make_dir_cache',
+           'make_dir_nic',
+           'make_dir_fdiccb',
+           'make_dir_fdicsod',
+           'make_dir_fdicfail',
+           'download_data', 
+           'download_data_nic',
+           'download_data_fdiccb',
+           'download_data_fdicsod',
+           'download_data_fdicfail',
+           'main',
+           ]
+__version__ = '0.5'
+__author__ = 'Mark D. Flood'
+
+
+MODNAME = __file__.split(os.path.sep)[-1].split('.')[0]
+LOG = UTIL.log_config(MODNAME)
 
 
 def make_dirs(config):
@@ -78,6 +80,8 @@ def make_dirs(config):
     the three downloads is controlled by the "fetch" variables in the 
     configuration: nic_fetch, fdiccb_fetch, and fdicfail_fetch. 
     """
+    LOG.debug('Creating cache directory: ')
+    make_dir_cache(config)
     if ('TRUE'==config['www2dat']['nic_fetch'].upper()):
         LOG.debug('Creating NIC directory: ')
         make_dir_nic(config)
@@ -91,8 +95,13 @@ def make_dirs(config):
         LOG.debug('Creating FDIC Fails directory: ')
         make_dir_fdicfail(config)
 
+def make_dir_cache(config):
+    cache_dir = config['DEFAULT']['cachedir']
+    os.makedirs(cache_dir, exist_ok=True)
+    LOG.info('Cache dir: '+cache_dir)
+
 def make_dir_nic(config):
-    nic_path = UTIL.resolve_dir_nic(config['www2dat']['nic_dir'], 
+    nic_path = DATA.resolve_dir_nic(config['www2dat']['nic_dir'], 
       config['www2dat']['nic_subdir'])
     os.makedirs(nic_path, exist_ok=True)
     LOG.info('NIC path: '+nic_path)
@@ -156,46 +165,67 @@ def download_data_nic(config):
     nic_format = config['www2dat']['nic_format'].upper()
     tgtdir = UTIL.resolve_dir_nic(config['www2dat']['nic_dir'], 
       config['www2dat']['nic_subdir'])
-    S = config['www2dat']
+#    S = config['www2dat']
     if ('XML'==nic_format or 'BOTH'==nic_format):
-        downloads = [
-            (S['nic_xml_attributesactive'],S['nic_xmltgt_attributesactive']),
-            (S['nic_xml_attributesbranch'],S['nic_xmltgt_attributesbranch']),
-            (S['nic_xml_attributesclosed'],S['nic_xmltgt_attributesclosed']),
-            (S['nic_xml_relationships'],   S['nic_xmltgt_relationships']),
-            (S['nic_xml_transformations'], S['nic_xmltgt_transformations']) ]
-        download_urllist(config, downloads, tgtdir)
+        urllist = eval(config['www2dat']['nic_xml_urllist'])
+        filelist = eval(config['www2dat']['nic_xmlzip_filelist'])
+#        downloads = []
+#        # Assemble pairings of download URLs with normalized local filenames
+#        for i,url in enumerate(urllist):
+#            dnld = (urllist[i], filelist[i])
+#            downloads.append(dnld)    
+#        downloads = [
+#            (S['nic_xml_attributesactive'],S['nic_xmltgt_attributesactive']),
+#            (S['nic_xml_attributesbranch'],S['nic_xmltgt_attributesbranch']),
+#            (S['nic_xml_attributesclosed'],S['nic_xmltgt_attributesclosed']),
+#            (S['nic_xml_relationships'],   S['nic_xmltgt_relationships']),
+#            (S['nic_xml_transformations'], S['nic_xmltgt_transformations']) ]
+        download_urllist(config, urllist, filelist, tgtdir)
     if ('CSV'==nic_format or 'BOTH'==nic_format):
-        downloads = [
-            (S['nic_csv_attributesactive'],S['nic_csvtgt_attributesactive']),
-            (S['nic_csv_attributesbranch'],S['nic_csvtgt_attributesbranch']),
-            (S['nic_csv_attributesclosed'],S['nic_csvtgt_attributesclosed']),
-            (S['nic_csv_relationships'],   S['nic_csvtgt_relationships']),
-            (S['nic_csv_transformations'], S['nic_csvtgt_transformations']) ]
-        download_urllist(config, downloads, tgtdir)
+        urllist = eval(config['www2dat']['nic_csv_urllist'])
+        filelist = eval(config['www2dat']['nic_csvzip_filelist'])
+#        downloads = []
+#        # Assemble pairings of download URLs with normalized local filenames
+#        for i,url in enumerate(urllist):
+#            dnld = (urllist[i], filelist[i])
+#            downloads.append(dnld)    
+#        downloads = [
+#            (S['nic_csv_attributesactive'],S['nic_csvtgt_attributesactive']),
+#            (S['nic_csv_attributesbranch'],S['nic_csvtgt_attributesbranch']),
+#            (S['nic_csv_attributesclosed'],S['nic_csvtgt_attributesclosed']),
+#            (S['nic_csv_relationships'],   S['nic_csvtgt_relationships']),
+#            (S['nic_csv_transformations'], S['nic_csvtgt_transformations']) ]
+        download_urllist(config, urllist, filelist, tgtdir)
 
 def download_data_fdiccb(config):
     tgtdir = config['www2dat']['fdiccb_dir']
-    cfgsection = config['www2dat']
-    downloads = [
-        (cfgsection['fdiccb_csv_8487'],cfgsection['fdiccb_csvtgt_8487']),
-        (cfgsection['fdiccb_csv_8891'],cfgsection['fdiccb_csvtgt_8891']),
-        (cfgsection['fdiccb_csv_9296'],cfgsection['fdiccb_csvtgt_9296']),
-        (cfgsection['fdiccb_csv_9702'],cfgsection['fdiccb_csvtgt_9702']),
-        (cfgsection['fdiccb_csv_0309'],cfgsection['fdiccb_csvtgt_0309']),
-        (cfgsection['fdiccb_csv_1016'],cfgsection['fdiccb_csvtgt_1016']),
-        (cfgsection['fdiccb_csv_1719'],cfgsection['fdiccb_csvtgt_1719']) ]
-    download_urllist(config, downloads, tgtdir)
+    urllist = eval(config['www2dat']['fdiccb_urllist'])
+    filelist = eval(config['www2dat']['fdiccb_zip_filelist'])
+#    downloads = []
+#    # Assemble pairings of download URLs with normalized local filenames
+#    for i,url in enumerate(urllist):
+#        dnld = (urllist[i], filelist[i])
+#        downloads.append(dnld)    
+#    cfgsection = config['www2dat']
+#    downloads = [
+#        (cfgsection['fdiccb_csv_8487'],cfgsection['fdiccb_csvtgt_8487']),
+#        (cfgsection['fdiccb_csv_8891'],cfgsection['fdiccb_csvtgt_8891']),
+#        (cfgsection['fdiccb_csv_9296'],cfgsection['fdiccb_csvtgt_9296']),
+#        (cfgsection['fdiccb_csv_9702'],cfgsection['fdiccb_csvtgt_9702']),
+#        (cfgsection['fdiccb_csv_0309'],cfgsection['fdiccb_csvtgt_0309']),
+#        (cfgsection['fdiccb_csv_1016'],cfgsection['fdiccb_csvtgt_1016']),
+#        (cfgsection['fdiccb_csv_1719'],cfgsection['fdiccb_csvtgt_1719']) ]
+    download_urllist(config, urllist, filelist, tgtdir)
 
 def download_data_fdicsod(config):
     tgtdir = config['www2dat']['fdicsod_dir']
-    urllist = eval(config['www2dat']['fdicsod_url_filelist'])
-    filelist = eval(config['www2dat']['fdicsod_ziptgt_filelist'])
-    downloads = []
-    # Assemble pairings of download URLs with normalized local filenames
-    for i,url in enumerate(urllist):
-        dnld = (urllist[i], filelist[i])
-        downloads.append(dnld)
+    urllist = eval(config['www2dat']['fdicsod_urllist'])
+    filelist = eval(config['www2dat']['fdicsod_zip_filelist'])
+#    downloads = []
+#    # Assemble pairings of download URLs with normalized local filenames
+#    for i,url in enumerate(urllist):
+#        dnld = (urllist[i], filelist[i])
+#        downloads.append(dnld)
 #    cfgsection = config['www2dat']
 #    downloads = [
 #        (cfgsection['fdicsod_csv_2018'],cfgsection['fdicsod_csvtgt_2018']),
@@ -223,19 +253,26 @@ def download_data_fdicsod(config):
 #        (cfgsection['fdicsod_csv_1996'],cfgsection['fdicsod_csvtgt_1996']),
 #        (cfgsection['fdicsod_csv_1995'],cfgsection['fdicsod_csvtgt_1995']),
 #        (cfgsection['fdicsod_csv_1994'],cfgsection['fdicsod_csvtgt_1994']) ]
-    download_urllist(config, downloads, tgtdir)
+    download_urllist(config, urllist, filelist, tgtdir)
 
 def download_data_fdicfail(config):
     tgtdir = config['www2dat']['fdicfail_dir']
-    cfgsection = config['www2dat']
-    downloads = [
-        (cfgsection['fdicfail_csv_curr'],cfgsection['fdicfail_csvtgt_curr']) ]
-    download_urllist(config, downloads, tgtdir)
+#    cfgsection = config['www2dat']
+    urllist = eval(config['www2dat']['fdicfail_urllist'])
+    filelist = eval(config['www2dat']['fdicfail_csv_filelist'])
+#    downloads = [
+#        (cfgsection['fdicfail_csv_curr'],cfgsection['fdicfail_csvtgt_curr']) ]
+    download_urllist(config, urllist, filelist, tgtdir)
 
 
 
-def download_urllist(config, downloads, tgtdir):
+def download_urllist(config, urllist, filelist, tgtdir):
     sleep_interval = int(config['www2dat']['sleep_interval'])
+    # Assemble pairings of download URLs with normalized local filenames
+    downloads = []
+    for i,url in enumerate(urllist):
+        dnld = (urllist[i], filelist[i])
+        downloads.append(dnld)
     download_count = 0
     if ('TRUE'==config['DEFAULT']['progressbars'].upper()):
         for dld in pb.progressbar(downloads, redirect_stdout=True):
