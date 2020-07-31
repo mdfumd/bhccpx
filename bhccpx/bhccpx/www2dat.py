@@ -1,26 +1,47 @@
 #!/usr/bin/env python3
 
 # -----------------------------------------------------------------------------
+# Copyright (c) 2020 University of Maryland # All rights reserved.
+# -----------------------------------------------------------------------------
+#
 # This file is part of the BHC Complexity Toolkit.
 #
-# The BHC Complexity Toolkit is free software: you can redistribute it and/or
-# modify it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# The toolkit is part of a larger research project undertaken by:
+#   * Mark D. Flood, U. of Maryland
+#   * Dror Kenett, John Hopkins U. and London School of Economics
+#   * Robin Lumsdaine, American U., Erasmus U., and Tinbergen Inst.
+#   * Jonathan K. Simon, U. of Iowa
 #
-# The BHC Complexity Toolkit is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# Users of the software should cite the following research paper:
 #
-# You should have received a copy of the GNU General Public License
-# along with the BHC Complexity Toolkit.  If not, 
-# see <https://www.gnu.org/licenses/>.
-# -----------------------------------------------------------------------------
-# Copyright 2019, Mark D. Flood
+#   * M. Flood, D. Kenett, R. Lumsdaine, and J. Simon
+#     The Complexity of Bank Holding Companies: A Topological Approach
+#     Journal of Banking and Finance, 2020, forthcoming
+#     https://doi.org/10.1016/j.jbankfin.2020.105789
 #
-# Author: Mark D. Flood
-# Last revision: 4-Sep-2019
+#     Abstract:
+#     We develop metrics to assess the complexity of a bank holding
+#     company (BHC), based on its ownership structure. Large BHCs have
+#     intricate ownership hierarchies involving hundreds or even thousands
+#     of legal entities that may contribute to increased operational risk
+#     and greater opacity. Our measures are mathematically grounded,
+#     intuitive, and easy to implement. They may be particularly useful
+#     in the context of resolution, where regulators often face significant
+#     time pressure and coordination challenges. We use regulatory filing
+#     data from the Federal Reserve to validate the measures, demonstrating
+#     that they provide a useful complement to balance sheet information in
+#     assessing BHC complexity. Notably, the proposed measures are highly
+#     correlated with existing complexity indicators that are not based on
+#     organizational structure and are less correlated with size than these
+#     existing complexity measures. We show that the proposed measures
+#     provide additional explanatory power for the regulatory indicators,
+#     even after controlling for size.
+#
+# A preprint is available at:
+#
+#   * The Complexity of Bank Holding Companies: A Topological Approach
+#     https://ssrn.com/abstract=3031726
+#
 # -----------------------------------------------------------------------------
 
 import os
@@ -47,7 +68,7 @@ __all__ = ['make_dirs',
            'download_data_fdicfail',
            'main',
            ]
-__version__ = '0.5'
+__version__ = '0.6'
 __author__ = 'Mark D. Flood'
 
 
@@ -163,110 +184,38 @@ def download_data(config):
 
 def download_data_nic(config):
     nic_format = config['www2dat']['nic_format'].upper()
-    tgtdir = UTIL.resolve_dir_nic(config['www2dat']['nic_dir'], 
+    tgtdir = DATA.resolve_dir_nic(config['www2dat']['nic_dir'], 
       config['www2dat']['nic_subdir'])
-#    S = config['www2dat']
     if ('XML'==nic_format or 'BOTH'==nic_format):
         urllist = eval(config['www2dat']['nic_xml_urllist'])
         filelist = eval(config['www2dat']['nic_xmlzip_filelist'])
-#        downloads = []
-#        # Assemble pairings of download URLs with normalized local filenames
-#        for i,url in enumerate(urllist):
-#            dnld = (urllist[i], filelist[i])
-#            downloads.append(dnld)    
-#        downloads = [
-#            (S['nic_xml_attributesactive'],S['nic_xmltgt_attributesactive']),
-#            (S['nic_xml_attributesbranch'],S['nic_xmltgt_attributesbranch']),
-#            (S['nic_xml_attributesclosed'],S['nic_xmltgt_attributesclosed']),
-#            (S['nic_xml_relationships'],   S['nic_xmltgt_relationships']),
-#            (S['nic_xml_transformations'], S['nic_xmltgt_transformations']) ]
         download_urllist(config, urllist, filelist, tgtdir)
     if ('CSV'==nic_format or 'BOTH'==nic_format):
         urllist = eval(config['www2dat']['nic_csv_urllist'])
         filelist = eval(config['www2dat']['nic_csvzip_filelist'])
-#        downloads = []
-#        # Assemble pairings of download URLs with normalized local filenames
-#        for i,url in enumerate(urllist):
-#            dnld = (urllist[i], filelist[i])
-#            downloads.append(dnld)    
-#        downloads = [
-#            (S['nic_csv_attributesactive'],S['nic_csvtgt_attributesactive']),
-#            (S['nic_csv_attributesbranch'],S['nic_csvtgt_attributesbranch']),
-#            (S['nic_csv_attributesclosed'],S['nic_csvtgt_attributesclosed']),
-#            (S['nic_csv_relationships'],   S['nic_csvtgt_relationships']),
-#            (S['nic_csv_transformations'], S['nic_csvtgt_transformations']) ]
         download_urllist(config, urllist, filelist, tgtdir)
 
 def download_data_fdiccb(config):
     tgtdir = config['www2dat']['fdiccb_dir']
     urllist = eval(config['www2dat']['fdiccb_urllist'])
     filelist = eval(config['www2dat']['fdiccb_zip_filelist'])
-#    downloads = []
-#    # Assemble pairings of download URLs with normalized local filenames
-#    for i,url in enumerate(urllist):
-#        dnld = (urllist[i], filelist[i])
-#        downloads.append(dnld)    
-#    cfgsection = config['www2dat']
-#    downloads = [
-#        (cfgsection['fdiccb_csv_8487'],cfgsection['fdiccb_csvtgt_8487']),
-#        (cfgsection['fdiccb_csv_8891'],cfgsection['fdiccb_csvtgt_8891']),
-#        (cfgsection['fdiccb_csv_9296'],cfgsection['fdiccb_csvtgt_9296']),
-#        (cfgsection['fdiccb_csv_9702'],cfgsection['fdiccb_csvtgt_9702']),
-#        (cfgsection['fdiccb_csv_0309'],cfgsection['fdiccb_csvtgt_0309']),
-#        (cfgsection['fdiccb_csv_1016'],cfgsection['fdiccb_csvtgt_1016']),
-#        (cfgsection['fdiccb_csv_1719'],cfgsection['fdiccb_csvtgt_1719']) ]
     download_urllist(config, urllist, filelist, tgtdir)
 
 def download_data_fdicsod(config):
     tgtdir = config['www2dat']['fdicsod_dir']
     urllist = eval(config['www2dat']['fdicsod_urllist'])
     filelist = eval(config['www2dat']['fdicsod_zip_filelist'])
-#    downloads = []
-#    # Assemble pairings of download URLs with normalized local filenames
-#    for i,url in enumerate(urllist):
-#        dnld = (urllist[i], filelist[i])
-#        downloads.append(dnld)
-#    cfgsection = config['www2dat']
-#    downloads = [
-#        (cfgsection['fdicsod_csv_2018'],cfgsection['fdicsod_csvtgt_2018']),
-#        (cfgsection['fdicsod_csv_2017'],cfgsection['fdicsod_csvtgt_2017']),
-#        (cfgsection['fdicsod_csv_2016'],cfgsection['fdicsod_csvtgt_2016']),
-#        (cfgsection['fdicsod_csv_2015'],cfgsection['fdicsod_csvtgt_2015']),
-#        (cfgsection['fdicsod_csv_2014'],cfgsection['fdicsod_csvtgt_2014']),
-#        (cfgsection['fdicsod_csv_2013'],cfgsection['fdicsod_csvtgt_2013']),
-#        (cfgsection['fdicsod_csv_2012'],cfgsection['fdicsod_csvtgt_2012']),
-#        (cfgsection['fdicsod_csv_2011'],cfgsection['fdicsod_csvtgt_2011']),
-#        (cfgsection['fdicsod_csv_2010'],cfgsection['fdicsod_csvtgt_2010']),
-#        (cfgsection['fdicsod_csv_2009'],cfgsection['fdicsod_csvtgt_2009']),
-#        (cfgsection['fdicsod_csv_2008'],cfgsection['fdicsod_csvtgt_2008']),
-#        (cfgsection['fdicsod_csv_2007'],cfgsection['fdicsod_csvtgt_2007']),
-#        (cfgsection['fdicsod_csv_2006'],cfgsection['fdicsod_csvtgt_2006']),
-#        (cfgsection['fdicsod_csv_2005'],cfgsection['fdicsod_csvtgt_2005']),
-#        (cfgsection['fdicsod_csv_2004'],cfgsection['fdicsod_csvtgt_2004']),
-#        (cfgsection['fdicsod_csv_2003'],cfgsection['fdicsod_csvtgt_2003']),
-#        (cfgsection['fdicsod_csv_2002'],cfgsection['fdicsod_csvtgt_2002']),
-#        (cfgsection['fdicsod_csv_2001'],cfgsection['fdicsod_csvtgt_2001']),
-#        (cfgsection['fdicsod_csv_2000'],cfgsection['fdicsod_csvtgt_2000']),
-#        (cfgsection['fdicsod_csv_1999'],cfgsection['fdicsod_csvtgt_1999']),
-#        (cfgsection['fdicsod_csv_1998'],cfgsection['fdicsod_csvtgt_1998']),
-#        (cfgsection['fdicsod_csv_1997'],cfgsection['fdicsod_csvtgt_1997']),
-#        (cfgsection['fdicsod_csv_1996'],cfgsection['fdicsod_csvtgt_1996']),
-#        (cfgsection['fdicsod_csv_1995'],cfgsection['fdicsod_csvtgt_1995']),
-#        (cfgsection['fdicsod_csv_1994'],cfgsection['fdicsod_csvtgt_1994']) ]
     download_urllist(config, urllist, filelist, tgtdir)
 
 def download_data_fdicfail(config):
     tgtdir = config['www2dat']['fdicfail_dir']
-#    cfgsection = config['www2dat']
     urllist = eval(config['www2dat']['fdicfail_urllist'])
     filelist = eval(config['www2dat']['fdicfail_csv_filelist'])
-#    downloads = [
-#        (cfgsection['fdicfail_csv_curr'],cfgsection['fdicfail_csvtgt_curr']) ]
-    download_urllist(config, urllist, filelist, tgtdir)
+    download_urllist(config, urllist, filelist, tgtdir, testzip=False)
 
 
 
-def download_urllist(config, urllist, filelist, tgtdir):
+def download_urllist(config, urllist, filelist, tgtdir, testzip=True):
     sleep_interval = int(config['www2dat']['sleep_interval'])
     # Assemble pairings of download URLs with normalized local filenames
     downloads = []
@@ -287,7 +236,8 @@ def download_urllist(config, urllist, filelist, tgtdir):
                     urllib.request.urlretrieve(url, tgt)
                     if (download_count<len(downloads)):
                         time.sleep(sleep_interval)
-                    DATA.test_zipfile_integrity(tgt)
+                    if (testzip):
+                        DATA.test_zipfile_integrity(tgt)
                 except (ConnectionError) as ce:
                     LOG.error('Download failed for: '+tgt+' from: '+url+'. '+
                       'You may need to download this file manually. '+str(ce))
@@ -303,7 +253,8 @@ def download_urllist(config, urllist, filelist, tgtdir):
                     urllib.request.urlretrieve(url, tgt)
                     if (download_count<len(downloads)):
                         time.sleep(sleep_interval)
-                    DATA.test_zipfile_integrity(tgt)
+                    if (testzip):
+                        DATA.test_zipfile_integrity(tgt)
                 except (ConnectionError) as ce:
                     LOG.error('Download failed for: '+tgt+' from: '+url+'. '+
                       'You may need to download this file manually. '+str(ce))

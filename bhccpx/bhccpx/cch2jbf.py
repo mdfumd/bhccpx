@@ -1,26 +1,47 @@
 #!/usr/bin/env python3
 
 # -----------------------------------------------------------------------------
+# Copyright (c) 2020 University of Maryland # All rights reserved.
+# -----------------------------------------------------------------------------
+#
 # This file is part of the BHC Complexity Toolkit.
 #
-# The BHC Complexity Toolkit is free software: you can redistribute it and/or
-# modify it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# The toolkit is part of a larger research project undertaken by:
+#   * Mark D. Flood, U. of Maryland
+#   * Dror Kenett, John Hopkins U. and London School of Economics
+#   * Robin Lumsdaine, American U., Erasmus U., and Tinbergen Inst.
+#   * Jonathan K. Simon, U. of Iowa
 #
-# The BHC Complexity Toolkit is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# Users of the software should cite the following research paper:
 #
-# You should have received a copy of the GNU General Public License
-# along with the BHC Complexity Toolkit.  If not, 
-# see <https://www.gnu.org/licenses/>.
-# -----------------------------------------------------------------------------
-# Copyright 2019, Mark D. Flood
+#   * M. Flood, D. Kenett, R. Lumsdaine, and J. Simon
+#     The Complexity of Bank Holding Companies: A Topological Approach
+#     Journal of Banking and Finance, 2020, forthcoming
+#     https://doi.org/10.1016/j.jbankfin.2020.105789
 #
-# Author: Mark D. Flood
-# Last revision: 5-Sep-2019
+#     Abstract:
+#     We develop metrics to assess the complexity of a bank holding
+#     company (BHC), based on its ownership structure. Large BHCs have
+#     intricate ownership hierarchies involving hundreds or even thousands
+#     of legal entities that may contribute to increased operational risk
+#     and greater opacity. Our measures are mathematically grounded,
+#     intuitive, and easy to implement. They may be particularly useful
+#     in the context of resolution, where regulators often face significant
+#     time pressure and coordination challenges. We use regulatory filing
+#     data from the Federal Reserve to validate the measures, demonstrating
+#     that they provide a useful complement to balance sheet information in
+#     assessing BHC complexity. Notably, the proposed measures are highly
+#     correlated with existing complexity indicators that are not based on
+#     organizational structure and are less correlated with size than these
+#     existing complexity measures. We show that the proposed measures
+#     provide additional explanatory power for the regulatory indicators,
+#     even after controlling for size.
+#
+# A preprint is available at:
+#
+#   * The Complexity of Bank Holding Companies: A Topological Approach
+#     https://ssrn.com/abstract=3031726
+#
 # -----------------------------------------------------------------------------
 
 import os
@@ -133,7 +154,7 @@ def NICrel_breakdown(NICdata, asofdate):
 
 
 def populate_bhc(config, BankSys, NICdata, rssd):
-    usebranches = ('TRUE'==config[MODNAME]['usebranches'].upper())
+#    usebranches = ('TRUE'==config[MODNAME]['usebranches'].upper())
     node_atts = eval(config[MODNAME]['node_attributes'])
     edge_atts = eval(config[MODNAME]['edge_attributes'])
     bhc_entities = nx.algorithms.dag.descendants(BankSys, rssd)
@@ -141,8 +162,8 @@ def populate_bhc(config, BankSys, NICdata, rssd):
     BHC = BankSys.subgraph(bhc_entities)
     BHC = c2c.add_attributes_node(BHC, NICdata, node_atts)
     BHC = c2c.add_attributes_edge(BHC, NICdata, edge_atts)
-    if (not(usebranches)):
-        BHC = remove_branches (config, NICdata, BHC)
+#    if (not(usebranches)):
+#        BHC = remove_branches (config, NICdata, BHC)
     BHC = BHC.to_directed()
     return BHC
 
@@ -218,8 +239,6 @@ def make_sample(config):
     asof_list = []    
     for YQ in eval(config[MODNAME]['asoflist']):
         asof_list.append(UTIL.make_asof(YQ)[0])
-#    if ("TRUE"==config[MODNAME]['clearcache'].upper()):
-#        clear_cache(config[MODNAME]['outdir'], asof_list)
     parallel_cores = int(config[MODNAME]['parallel'])
     if (parallel_cores > 0):
         LOG.warning(f'Begin parallel processing ({len(asof_list)} '+
@@ -247,9 +266,9 @@ def make_sample(config):
 # =============================================================================
         
         
-# A dedicated function that produces the summary comparison of complexity
-# measures for the Wachovia-Wells Fargo case study. This appears as Table 2
-# in the NBER version of the paper
+# ---------------------
+# Need to document this
+# ---------------------
 def make_persistent(config):
     if not('TRUE'==config[MODNAME]['make_persistent'].upper()):
         LOG.warning(f'Declined make_persistent, returning')
@@ -356,7 +375,7 @@ def make_panel(config):
     parallel_cores = int(config[MODNAME]['parallel'])
     if (parallel_cores > 0):
         LOG.warning(f'Begin parallel processing ({len(asof_list)} '+
-                    f'tasks across {parallel_cores} cores')
+                    f'tasks across {parallel_cores} cores)')
         pcount = min(parallel_cores, os.cpu_count(), len(asof_list))
         pool = mp.Pool(pcount)
         results = [pool.apply_async(make_panel_asof, (config, asof)) 
@@ -395,7 +414,7 @@ def make_panel_asof(config, asofdate):
     HHs = eval(config[MODNAME]['panel_bhclist'])
     if (len(HHs) <= 0):
         HHs = NICrel_breakdown(NICdata, asofdate)[0]
-    LOG.debug('Identified {len(HHs)} high-holders for {asofdate}')
+    LOG.debug(f'Identified {len(HHs)} high-holders for {asofdate}')
     BHCs = dict()
     BHCs['ASOF'] = asofdate
     for rssd in HHs:
@@ -409,19 +428,7 @@ def make_panel_asof(config, asofdate):
         
 
 def make_failscatter(config):
-    """Builds requested network representations of the full banking system
-    
-    Converts the NIC data into NetworkX objects (DiGraphs), each representing
-    the ownership relationships in the banking system at a given as-of date.
-    The new network objects are stored in the local cache for faster 
-    subsequent retrieval. However, if requested, this function will clear 
-    existing versions of the requested network objects from the cache 
-    before beginning. 
-    
-    Parameters
-    ----------
-    config : ConfigParser object
-    """
+#    """
 #    if not('TRUE'==config[MODNAME]['make_failscatter'].upper()):
 #        LOG.warning(f'Declined make_failscatter, returning')
 #        return  # NOTE: Alternate return 
@@ -465,10 +472,10 @@ def make_failscatter(config):
         CERT2RSSD.setdefault(v, set()).add(k)
     extraatts = eval(config[MODNAME]['node_attributes'])
     metriccols = ['M_BVct_c', 'M_BEct_c', 'M_BCrk_c', 'M_BCmp_c', 
-                    'M_EQfxB1_c', 'M_EQhxB1_c', 'M_EQfcB1_c', 'M_EQhcB1_c', 
-                    'M_EQecB1_c', 'M_EDHmB1_c', 'M_EDHmM_c', 'M_ENlbl_c', 
-                    'M_GQfxB1_c', 'M_GQhxB1_c', 'M_GQfcB1_c', 'M_GQhcB1_c', 
-                    'M_GQecB1_c', 'M_GDHmB1_c', 'M_GDHmM_c', 'M_GNlbl_c',]
+                  'M_EQfxB1_c', 'M_EQhxB1_c', 'M_EQfcB1_c', 'M_EQhcB1_c', 
+                  'M_EQecB1_c', 'M_EDHmB1_c', 'M_EDHmM_c', 'M_ENlbl_c', 
+                  'M_GQfxB1_c', 'M_GQhxB1_c', 'M_GQfcB1_c', 'M_GQhcB1_c', 
+                  'M_GQecB1_c', 'M_GDHmB1_c', 'M_GDHmM_c', 'M_GNlbl_c',]
     FDICFailsdf = pd.concat([FDICFailsdf, pd.DataFrame(columns = metriccols)])
     for idx, row in FDICFailsdf.iterrows():
         cert = FDICFailsdf.loc[idx,'CERT']
@@ -557,7 +564,6 @@ def main(argv=None):
     """
     config = UTIL.parse_command_line(argv, __file__)
     try:
-#        make_sample(config)
         make_wachwells(config)
         make_panel(config)
         make_failscatter(config)
@@ -571,116 +577,4 @@ if __name__ == "__main__":
     main()
     
 
-## Create an SVG image file representing a BHC. The file is stored in the 
-## outdir, with the filename: RSSD_<rssd_hh>_<asofdate>.svg.
-## If popup is set to True, then the function will also launch a browser to
-## display the file. 
-#def makeSVG(BHC, outdir, rssd_hh, asofdate, popup=False):
-#    svg_filename = 'RSSD'+'_'+str(rssd_hh)+'_'+str(asofdate)
-#    svg_file = outdir + svg_filename
-#    colormap = eval(CONFIG[MODNAME]['colormap'])
-#    dot = gv.Digraph(comment='RSSD:'+str(rssd_hh), engine='dot')
-#    dot.attr('node', fontsize='8')
-#    dot.attr('node', fixedsize='true')
-#    dot.attr('node', width='0.7')
-#    dot.attr('node', height='0.3')
-#    for N in BHC.nodes():
-#        NM_LGL = ''
-#        ENTITY_TYPE = 'ZZZ'
-#        GEO_JURISD = 'ZZZ'
-#        attribute_error = True
-#        try:
-#            NM_LGL = BHC.node[N]['nm_lgl'].strip()
-#            ENTITY_TYPE = BHC.node[N]['entity_type']
-#            GEO_JURISD = BHC.node[N]['GEO_JURISD']
-#            attribute_error = False
-#        except KeyError as KE:
-#            print('WARNING: Invalid attribute data for RSSD='+str(N)+' at asofdate='+str(asofdate))
-#        tt = '['+str(N)+']'+' '+ENTITY_TYPE+'\\n' +'------------\\n'+ NM_LGL +'\\n' +'------------\\n'+ GEO_JURISD
-#        if (attribute_error):
-#            dot.node('rssd'+str(N), str(N), style="filled", fillcolor="red;.5:green", tooltip=tt)
-#        else:
-#            fc = colormap[ENTITY_TYPE]
-#            dot.node('rssd'+str(N), str(N), style="filled", fillcolor=fc, tooltip=tt)
-#    for E in BHC.edges():
-#        src = 'rssd' + str(E[0])
-#        tgt = 'rssd' + str(E[1])
-#        Vs = BHC.node[E[0]]
-#        Vt = BHC.node[E[1]]
-#        col = 'red'
-#        if ('entity_type' not in Vs) or ('entity_type'not in Vt):
-#            col='green'
-#        elif Vs['entity_type']==Vt['entity_type']:
-#            col='black'
-#        dot.edge(src, tgt, arrowsize='0.3', color=col)
-#    dot.render(filename=svg_file, format='svg')
-#    dot.save(filename=svg_file+'.dot', directory=outdir)
-#    if (popup):
-#        os.system("%s %s" % (CONFIG[MODNAME]['browsercmd'], svg_file+'.svg'))
 
-
-#def make_failscatter(config):
-#    """ Create a CSV file correlating complexity with FDIC failure severity 
-#    """
-#    if not('TRUE'==config[MODNAME]['make_failscatter'].upper()):
-#        LOG.warning(f'Declined make_failscatter, returning')
-#        return  # NOTE: Alternate return 
-##    spec = cache_spec(config)
-#    FDICFailsdf = DATA.fetch_data(spec, DATA.case_FDICFail)
-#    FDICFailsdf['LOA'] = FDICFailsdf.COST / FDICFailsdf.QBFASSET
-#    FDICFailsdf['LOD'] = FDICFailsdf.COST / FDICFailsdf.QBFDEP
-#    asof_list = UTIL.assemble_asofs(config[MODNAME]['failscatter_asofdate0'],
-#                                    config[MODNAME]['failscatter_asofdate1'])
-##    parallel_cores = int(config[MODNAME]['parallel'])
-##    if (parallel_cores > 0):
-##        LOG.info(f'Starting parallel processing ({parallel_cores} cores) for '+
-##                 f'{len(asof_list)} dates (threads may trap process messages)')
-##        pcount = min(int(config[MODNAME]['parallel']), os.cpu_count(), len(asof_list))
-##        pool = mp.Pool(pcount)
-##        results = [pool.apply_async(all_bhc_complex, (config, asof)) for asof in asof_list]
-##        results = [res.get() for res in results]
-##        pool.join()
-##        LOG.debug('Parallel processing complete')
-##        pool.close()
-##    else:
-#    LOG.info(f'Beginning sequential processing for {len(asof_list)} dates')
-#    for idx,row in FDICFailsdf.iterrows():
-#        cert = idx
-#        faildate = UTIL.timestamp2asofdate( row['FAILDATE'])
-#        rcntdate = UTIL.rcnt_qtrend(faildate)
-#        specd = cache_spec(config, rcntdate)
-#        IDmaps = DATA.fetch_data(spec, DATA.case_IDmaps)
-##        cert = row['ID_FDIC_CERT']
-##        rssd2cert[rssd] = cert
-##        cert2rssd[cert] = rssd    
-#    results = []
-#    for asofdate in pb.progressbar(asof_list, redirect_stdout=True):
-#        results.append(all_bhc_complex(config, asofdate))
-#    LOG.debug('Sequential processing complete')
-#    panelfilepath = os.path.join(config[MODNAME]['outdir'], config['sys2out']['panel_filename'])
-#    with open(panelfilepath, mode='w') as csvfile:
-#        fields = ['ASOF', 'RSSD'] + eval(config['sys2out']['metric_list'])
-#        csvwriter = csv.DictWriter(csvfile, fieldnames=fields)
-#        csvwriter.writeheader()
-#        # TODO: NEED TO SORT results BY ASOF AND RSSD BEFORE SAVING TO CSV
-#        for asof_dict in results:
-#            asofdate = asof_dict.pop('ASOF')
-#            for rssd in asof_dict.keys():
-#                metric_dict = asof_dict[rssd]
-#                metric_dict['ASOF'] = asofdate
-#                metric_dict['RSSD'] = rssd
-#                csvwriter.writerow(metric_dict)
-#    csvfile.close()
-#    LOG.info('**** Processing complete ****')
-#  
-   
-## Deletes any DATA_* files in the cache corresponding to the dates in asof_list
-#def clear_cache(cachedir, asof_list):
-#    for asofdate in asof_list:
-#        sysfilename = 'DATA_'+str(asofdate)+'.pik'
-#        sysfilepath = os.path.join(cachedir, sysfilename)
-#        if os.path.isfile(sysfilepath):
-#            os.remove(sysfilepath)
-
-
-     

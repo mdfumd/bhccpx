@@ -1,26 +1,47 @@
 #!/usr/bin/env python3
 
 # -----------------------------------------------------------------------------
+# Copyright (c) 2020 University of Maryland # All rights reserved.
+# -----------------------------------------------------------------------------
+#
 # This file is part of the BHC Complexity Toolkit.
 #
-# The BHC Complexity Toolkit is free software: you can redistribute it and/or
-# modify it under the terms of the GNU General Public License as published by
-# the Free Software Foundation, either version 3 of the License, or
-# (at your option) any later version.
+# The toolkit is part of a larger research project undertaken by:
+#   * Mark D. Flood, U. of Maryland
+#   * Dror Kenett, John Hopkins U. and London School of Economics
+#   * Robin Lumsdaine, American U., Erasmus U., and Tinbergen Inst.
+#   * Jonathan K. Simon, U. of Iowa
 #
-# The BHC Complexity Toolkit is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# Users of the software should cite the following research paper:
 #
-# You should have received a copy of the GNU General Public License
-# along with the BHC Complexity Toolkit.  If not, 
-# see <https://www.gnu.org/licenses/>.
-# -----------------------------------------------------------------------------
-# Copyright 2019, Mark D. Flood
+#   * M. Flood, D. Kenett, R. Lumsdaine, and J. Simon
+#     The Complexity of Bank Holding Companies: A Topological Approach
+#     Journal of Banking and Finance, 2020, forthcoming
+#     https://doi.org/10.1016/j.jbankfin.2020.105789
 #
-# Author: Mark D. Flood
-# Last revision: 5-Sep-2019
+#     Abstract:
+#     We develop metrics to assess the complexity of a bank holding
+#     company (BHC), based on its ownership structure. Large BHCs have
+#     intricate ownership hierarchies involving hundreds or even thousands
+#     of legal entities that may contribute to increased operational risk
+#     and greater opacity. Our measures are mathematically grounded,
+#     intuitive, and easy to implement. They may be particularly useful
+#     in the context of resolution, where regulators often face significant
+#     time pressure and coordination challenges. We use regulatory filing
+#     data from the Federal Reserve to validate the measures, demonstrating
+#     that they provide a useful complement to balance sheet information in
+#     assessing BHC complexity. Notably, the proposed measures are highly
+#     correlated with existing complexity indicators that are not based on
+#     organizational structure and are less correlated with size than these
+#     existing complexity measures. We show that the proposed measures
+#     provide additional explanatory power for the regulatory indicators,
+#     even after controlling for size.
+#
+# A preprint is available at:
+#
+#   * The Complexity of Bank Holding Companies: A Topological Approach
+#     https://ssrn.com/abstract=3031726
+#
 # -----------------------------------------------------------------------------
 
 import os
@@ -28,6 +49,7 @@ import time
 import re
 import shutil
 import tempfile
+from pathlib import Path
 
 import graphviz as gv
 import zipfile as zf
@@ -45,7 +67,7 @@ __all__ = ['resolve_dir_nic',
            'fetch_data_fdicfail',
            'fetch_data_banksys',
            ]
-__version__ = '0.5'
+__version__ = '0.6.01'
 __author__ = 'Mark D. Flood'
 
 
@@ -59,6 +81,7 @@ def fetch_data_banksys(config, asofdate, sect):
     spec = cache_spec(config, sect)
     data = None
     cachepath = build_cachepath(spec, 'BankSys', asofdate)
+    cachepath = Path(cachepath)
     if (spec['banksys_clearcache'] and os.path.isfile(cachepath)): 
         os.remove(cachepath)
     data = cache_retrieve(cachepath)
@@ -74,12 +97,13 @@ def fetch_data_fdicfail(config, sect):
     spec = cache_spec(config, sect)
     data = None
     cachepath = os.path.join(spec['cachedir'], 'FDICFail.pik')
+    cachepath = Path(cachepath)
     if (spec['fdicfail_clearcache'] and os.path.isfile(cachepath)): 
         os.remove(cachepath)
     data = cache_retrieve(cachepath)
     if (data is None):
         LOG.debug(f'Cache file not found: {cachepath}; creating')
-        indir = spec['fdicfail_dir']
+        indir = Path(spec['fdicfail_dir'])
         filelist = spec['fdicfail_file']
         data = create_FDICFail(indir, filelist)
         cache_create(cachepath, data)
@@ -90,12 +114,13 @@ def fetch_data_fdiccb(config, asofdate, sect):
     spec = cache_spec(config, sect)
     data = None
     cachepath = build_cachepath(spec, 'FDICCB', asofdate)
+    cachepath = Path(cachepath)
     if (spec['fdiccb_clearcache'] and os.path.isfile(cachepath)): 
         os.remove(cachepath)
     data = cache_retrieve(cachepath)
     if (data is None):
         LOG.debug(f'Cache file not found: {cachepath}; creating')
-        indir = spec['fdiccb_dir']
+        indir = Path(spec['fdiccb_dir'])
         filelist = spec['fdiccb_filelist']
         data = create_FDICCB(indir, filelist, asofdate)
         cache_create(cachepath, data)
@@ -106,12 +131,13 @@ def fetch_data_fdicsod(config, asofdate, sect):
     spec = cache_spec(config, sect)
     data = None
     cachepath = build_cachepath(spec,'FDICSoD', asofdate, quarterly_data=False)
+    cachepath = Path(cachepath)
     if (spec['fdicsod_clearcache'] and os.path.isfile(cachepath)): 
         os.remove(cachepath)
     data = cache_retrieve(cachepath)
     if (data is None):
         LOG.debug(f'Cache file not found: {cachepath}; creating')
-        indir = spec['fdicsod_dir']
+        indir = Path(spec['fdicsod_dir'])
         filelist = spec['fdicsod_filelist']
         data = create_FDICSoD(indir, filelist, asofdate)
         cache_create(cachepath, data)
@@ -122,13 +148,14 @@ def fetch_data_nic(config, asofdate, sect):
     spec = cache_spec(config, sect)
     data = None
     cachepath = build_cachepath(spec, 'NIC', asofdate)
+    cachepath = Path(cachepath)
     if (spec['nic_clearcache'] and os.path.isfile(cachepath)): 
         LOG.error(f"SHOULD NOT BE HERE: {spec['nic_clearcache']}")
         os.remove(cachepath)
     data = cache_retrieve(cachepath)
     if (data is None):
         LOG.debug(f'Cache file not found: {cachepath}; creating')
-        indir = spec['nic_dir']
+        indir = Path(spec['nic_dir'])
         fA = spec['nic_attributesactive']
         fB = spec['nic_attributesbranch']
         fC = spec['nic_attributesclosed']
@@ -362,7 +389,7 @@ def ATTcsv2df(csvfile, asofdate, nicsource, sep=',', filter_asof=False):
         'ZIP_CD':object
     }
     sep = UTIL.delim_norm(sep)
-    LOG.info(f'Reading CSV file {csvfile} with delimiter: {sep}')
+    LOG.info(f'Reading CSV file {csvfile}')
     ATTdf = pd.read_csv(csvfile, dtype=DTYPES_ATT, sep=sep)
     # Create new column to serve as the primary key
     ATTdf['rssd'] = ATTdf['ID_RSSD']
@@ -437,7 +464,7 @@ def RELcsv2df(csvfile, asofdate, sep=',', filter_asof=True):
         'RELN_LVL':np.int8
     }
     sep = UTIL.delim_norm(sep)
-    LOG.info(f'Reading CSV file {csvfile} with delimiter: {sep}')
+    LOG.info(f'Reading CSV file {csvfile}')
     RELdf = pd.read_csv(csvfile, dtype=DTYPES_REL, sep=sep)
     # Create new columns to serve as the (compound) primary key
     RELdf['rssd_par'] = RELdf['ID_RSSD_PARENT']
@@ -888,8 +915,8 @@ def log_bhc_svg(BHC, outdir, fileroot, colormap, dim='entity_type',
     vis.attr('node', fixedsize='true')
     if condense:
         # Reasonable svg viewbox=1700x700pt; graph scale=.03,.40; graph translate=4,250
-        vis.attr('graph', size='9, 11')
-        vis.attr('graph', scale='2, 5')
+        vis.attr('graph', size='18, 110')
+#        vis.attr('graph', scale='120, 15')
         vis.attr('node', shape='circle')
         vis.attr('node', width='0.04')
     else:
@@ -934,6 +961,7 @@ def log_bhc_svg(BHC, outdir, fileroot, colormap, dim='entity_type',
         vis.edge(src, tgt, arrowsize='0.3', color=col)
     svg_path = os.path.join(outdir, f'{fileroot}')
     vis.render(filename=svg_path, format='svg')
+    vis.render(filename=svg_path, format='pdf')
 
 def log_bhcq_svg(BHC, outdir, fileroot, colormap, dim='entity_type', title=None):
     """Create an SVG image file representing a BHC quotient graph. 
